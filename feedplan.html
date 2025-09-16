@@ -5,9 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Feeding Plan Browser App</title>
 <style>
-body { font-family: Arial, sans-serif; margin: 10px; background: #f4f4f4; }
-h1 { text-align: center; color: #2a6ebb; font-size: 1.5em; }
-#loading { text-align: center; margin: 20px 0; display: none; }
+body { 
+  font-family: Arial, sans-serif; 
+  margin: 10px; 
+  background: #f4f4f4; 
+  color: #333;
+}
+h1 { 
+  text-align: center; 
+  color: #2a6ebb; 
+  font-size: 1.8em; 
+  margin-bottom: 20px;
+}
+#loading { 
+  text-align: center; 
+  margin: 20px 0; 
+  display: none; 
+}
 .spinner {
   border: 6px solid #f3f3f3;
   border-top: 6px solid #2a6ebb;
@@ -18,19 +32,88 @@ h1 { text-align: center; color: #2a6ebb; font-size: 1.5em; }
   display: inline-block;
 }
 @keyframes spin { 0% { transform: rotate(0deg);} 100% { transform: rotate(360deg);} }
-#totalHeadcount { font-size: 16px; margin-bottom: 15px; text-align: center; }
-table { border-collapse: collapse; width: 100%; margin-bottom: 20px; display: block; overflow-x: auto; }
-th, td { border: 1px solid #444; padding: 8px; text-align: center; min-width: 100px; }
-th { background: #2a6ebb; color: white; }
+
+#totalHeadcount { 
+  font-size: 18px; 
+  font-weight: bold; 
+  margin-bottom: 20px; 
+  text-align: center; 
+  color: #444;
+}
+
+table { 
+  border-collapse: collapse; 
+  width: 100%; 
+  margin-bottom: 20px; 
+  border-radius: 8px;
+  overflow: hidden;
+}
+th, td { 
+  border: 1px solid #ddd; 
+  padding: 12px; 
+  text-align: center; 
+}
+th { 
+  background: #2a6ebb; 
+  color: white; 
+  font-weight: bold;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
 tr:nth-child(even) { background: #f9f9f9; }
-input[type="text"] { width: 70px; padding: 5px; text-align: center; border-radius: 4px; border: 1px solid #ccc; }
-input[type="text"]:focus { border-color: #2a6ebb; outline: none; background-color: #fff; }
-button { margin-top: 15px; padding: 10px; font-size: 16px; background-color: #2a6ebb; color: white; border: none; border-radius: 6px; cursor: pointer; transition: background-color 0.3s; }
+tr:hover { background: #eef5ff; }
+
+input[type="text"] {
+  width: 80px; 
+  padding: 8px; 
+  text-align: center; 
+  border-radius: 6px; 
+  border: 1px solid #bbb; 
+  font-size: 16px;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+  transition: 0.2s;
+}
+input[type="text"]:focus { 
+  border-color: #2a6ebb; 
+  outline: none; 
+  background-color: #fff; 
+  box-shadow: 0 0 5px rgba(42,110,187,0.4);
+}
+
+button { 
+  margin: 10px 5px; 
+  padding: 12px 18px; 
+  font-size: 16px; 
+  background-color: #2a6ebb; 
+  color: white; 
+  border: none; 
+  border-radius: 8px; 
+  cursor: pointer; 
+  transition: 0.3s;
+}
 button:hover { background-color: #1f539d; }
-#planOutput { margin-top: 20px; background: #fff; padding: 15px; border: 1px solid #ccc; }
-#planOutput table th:nth-child(4), #planOutput table td:nth-child(4) { min-width: 120px; } /* Total column */
-#planOutput table th:nth-child(2), #planOutput table td:nth-child(2) { min-width: 80px; } /* % column */
-@media (max-width: 500px) { button { width: 100%; margin-top: 10px; } }
+button:active { transform: scale(0.98); }
+
+#planOutput { 
+  margin-top: 20px; 
+  background: #fff; 
+  padding: 20px; 
+  border: 1px solid #ccc; 
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+#planOutput h2 { margin-top: 0; }
+#planOutput table { margin-top: 10px; }
+
+@media (max-width: 600px) {
+  button { 
+    width: 100%; 
+    margin: 8px 0; 
+    font-size: 18px;
+  }
+  input[type="text"] { width: 100%; }
+}
 @media print {
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   body { background: white !important; }
@@ -46,8 +129,10 @@ button:hover { background-color: #1f539d; }
 <div id="loading"><div class="spinner"></div> Loading sheds...</div>
 <div id="totalHeadcount">Total Headcount: 0</div>
 <div id="inputs"></div>
-<button onclick="generatePlan()">Generate Plan</button>
-<button onclick="printPlan()">Print / Save as PDF</button>
+<div style="text-align:center;">
+  <button onclick="generatePlan()">🚜 Generate Plan</button>
+  <button onclick="printPlan()">🖨️ Print / Save as PDF</button>
+</div>
 
 <div id="planOutput"></div>
 
