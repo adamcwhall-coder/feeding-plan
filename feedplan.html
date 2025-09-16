@@ -1,234 +1,176 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Feeding Plan</title>
-
-<!-- jsPDF -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feeding Plan Browser App</title>
 <style>
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #f4f7fb;
-    margin: 0;
-    padding: 0;
-  }
-  h1 {
-    text-align: center;
-    color: #2a6ebb;
-    margin: 20px 0 10px;
-  }
-  #loader {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    margin-top: 60px;
-    font-size: 18px;
-    color: #555;
-  }
-  #inputs {
-    display: none;
-    max-width: 700px;
-    margin: 0 auto;
-    padding: 0 10px;
-  }
-  table {
-    border-collapse: collapse;
-    width: 100%;
-    margin-top: 20px;
-    background: #fff;
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  th {
-    background: #2a6ebb;
-    color: white;
-    padding: 12px;
-    text-align: left;
-    font-size: 14px;
-  }
-  td {
-    border-bottom: 1px solid #eee;
-    padding: 10px;
-    font-size: 14px;
-  }
-  tr:nth-child(even) { background: #f9f9f9; }
-  input[type="number"] {
-    width: 70px;
-    padding: 6px;
-    font-size: 14px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-  }
-  .button {
-    display: block;
-    width: 90%;
-    margin: 25px auto;
-    padding: 12px;
-    background: #2a6ebb;
-    color: white;
-    text-align: center;
-    border-radius: 6px;
-    text-decoration: none;
-    font-size: 16px;
-  }
-  #planOutput {
-    background: white;
-    margin: 20px auto;
-    padding: 20px;
-    max-width: 700px;
-    border-radius: 10px;
-  }
-  #totalHeadcount {
-    text-align: center;
-    margin-top: 5px;
-    font-weight: 600;
-  }
+body { font-family: Arial, sans-serif; margin: 10px; background: #f4f4f4; }
+h1 { text-align: center; color: #2a6ebb; font-size: 1.5em; }
+#loading { text-align: center; margin: 20px 0; display: none; }
+.spinner {
+  border: 6px solid #f3f3f3;
+  border-top: 6px solid #2a6ebb;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { 0% { transform: rotate(0deg);} 100% { transform: rotate(360deg);} }
+#totalHeadcount { font-size: 16px; margin-bottom: 15px; text-align: center; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 20px; display: block; overflow-x: auto; }
+th, td { border: 1px solid #444; padding: 8px; text-align: center; min-width: 100px; }
+th { background: #2a6ebb; color: white; }
+tr:nth-child(even) { background: #f9f9f9; }
+input[type="text"] { width: 70px; padding: 5px; text-align: center; border-radius: 4px; border: 1px solid #ccc; }
+input[type="text"]:focus { border-color: #2a6ebb; outline: none; background-color: #fff; }
+button { margin-top: 15px; padding: 10px; font-size: 16px; background-color: #2a6ebb; color: white; border: none; border-radius: 6px; cursor: pointer; transition: background-color 0.3s; }
+button:hover { background-color: #1f539d; }
+#planOutput { margin-top: 20px; background: #fff; padding: 15px; border: 1px solid #ccc; }
+#planOutput table th:nth-child(4), #planOutput table td:nth-child(4) { min-width: 120px; } /* Total column */
+#planOutput table th:nth-child(2), #planOutput table td:nth-child(2) { min-width: 80px; } /* % column */
+@media (max-width: 500px) { button { width: 100%; margin-top: 10px; } }
+@media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  body { background: white !important; }
+  table th { background-color: #2a6ebb !important; color: white !important; }
+  tr:nth-child(even) { background-color: #f9f9f9 !important; }
+  button, #inputs, #loading { display: none !important; }
+}
 </style>
 </head>
 <body>
 
-<h1>Feeding Plan</h1>
-<div id="loader">Loading data… ⏳</div>
+<h1>New Blainslie Feeding Plan</h1>
+<div id="loading"><div class="spinner"></div> Loading sheds...</div>
+<div id="totalHeadcount">Total Headcount: 0</div>
+<div id="inputs"></div>
+<button onclick="generatePlan()">Generate Plan</button>
+<button onclick="printPlan()">Print / Save as PDF</button>
 
-<div id="inputs">
-  <div id="totalHeadcount"></div>
-  <table>
-    <thead>
-      <tr>
-        <th>Shed</th>
-        <th>Ration</th>
-        <th>Headcount</th>
-        <th>% of Target</th>
-      </tr>
-    </thead>
-    <tbody id="shedTable"></tbody>
-  </table>
-  <a href="#" class="button" onclick="generatePlan()">Generate Plan</a>
-</div>
-
-<div id="planOutput" style="display:none"></div>
-<a href="#" class="button" style="display:none" id="pdfBtn" onclick="savePDF()">Save as PDF</a>
+<div id="planOutput"></div>
 
 <script>
-const RATIONS_URL = "https://script.google.com/macros/s/AKfycby3xII5SgE0reDRU7rY-ZQh2BA_QEk8lDJn8mwUrZKBxskTLKyv1KO2hLMs_uTQyneL/exec"; // Apps Script URL for Rations sheet
+const MAX_BATCH = 2100;
+const RATIONS_URL = "https://script.google.com/macros/s/AKfycbz7xmhtWaSwMcKVqZuuSo1eIAGOTKjThMYuDxyzKi3CNZ-uK8qAd_4ojJkVk8o0iwk/exec"; // Apps Script URL for Rations sheet
 const YESTERDAY_URL = "https://script.google.com/macros/s/AKfycbydhGdSJ52UomMLIP1GtxyVQe2dflny8PUIC5lfv0vIiqDis_AorTZr_MsbYWaPfCCI/exec"; // Apps Script URL for YesterdayFeed
 const SHEDS_URL = "https://script.google.com/macros/s/AKfycbwgA3g-Ps70NR3oBcgv11PU9wPwWg2Q5J_QHVF-aZ_Ix6G6rvOkGoYtYh1gZsL0Ed1K/exec";
 
-let RATIONS = [], SHEDS = [], YESTERDAY = {};
+let RATIONS = [], SHEDS = [];
 
-async function loadData(){
-  const [rRes, sRes, yRes] = await Promise.all([
-    fetch(RATIONS_URL),
-    fetch(SHEDS_URL),
-    fetch(YESTERDAY_URL)
-  ]);
+function showLoading(show) { document.getElementById("loading").style.display = show ? "block" : "none"; }
 
-  const rData = await rRes.json();
-  const sData = await sRes.json();
-  const yData = await yRes.json();
-
-  // Parse RATIONS
-  const headers = rData[0].slice(1);
-  RATIONS = rData.slice(1).map(row=>{
-    const obj = {Ingredient: row[0]};
-    headers.forEach((h,i)=> obj[h] = row[i+1]);
-    return obj;
-  });
-
-  // Parse SHEDS
-  SHEDS = sData.slice(1).map(r => ({
-    Shed: r[0],
-    Ration: r[1],
-    Headcount: Number(r[2])||0
-  }));
-
-  // Parse Yesterday
-  yData.slice(1).forEach(r => {
-    const shed = r[0];
-    let val = r[1];
-    if(typeof val === "number") val = Math.round(val*100) + "%";
-    if(!val || val === "No Data") val = "0%";
-    YESTERDAY[shed] = val;
-  });
-
-  buildInputTable();
+async function fetchRations() {
+  try { RATIONS = await (await fetch(RATIONS_URL + "?cacheBust=" + Date.now())).json(); }
+  catch (e) { console.error("Error fetching rations:", e); RATIONS = []; }
 }
 
-function buildInputTable(){
-  const tbody = document.getElementById('shedTable');
+async function fetchSheds() {
+  try { SHEDS = await (await fetch(SHEDS_URL + "?cacheBust=" + Date.now())).json(); }
+  catch (e) { console.error("Error fetching sheds:", e); SHEDS = []; }
+}
+
+async function fetchYesterdays() {
+  try {
+    const data = await (await fetch(YESTERDAY_URL + "?cacheBust=" + Date.now())).json();
+    const yesterdays = {};
+    SHEDS.forEach(s => {
+      const row = data.find(r => r[0] === s.Shed);
+      if (!row || row[1] === "No Data" || row[1]==null || row[1]==="") yesterdays[s.Shed] = "0%";
+      else if (typeof row[1] === "number") yesterdays[s.Shed] = row[1] <= 1 ? Math.round(row[1]*100)+"%" : Math.round(row[1])+"%";
+      else if (typeof row[1] === "string" && row[1].includes("%")) yesterdays[s.Shed] = row[1].trim();
+      else { const num = parseFloat(row[1]); yesterdays[s.Shed] = isNaN(num) ? "0%" : Math.round(num)+"%"; }
+    });
+    return yesterdays;
+  } catch (e) { console.error("Error fetching yesterday's data:", e); return {}; }
+}
+
+function computeShedTotal(shed, percent) {
   let total = 0;
-  SHEDS.forEach((s,i)=>{
-    total += s.Headcount;
-    const y = YESTERDAY[s.Shed] || "0%";
-    tbody.insertAdjacentHTML('beforeend', `
-      <tr>
-        <td>${s.Shed}</td>
-        <td>${s.Ration}</td>
-        <td>${s.Headcount || 0}</td>
-        <td>
-          <input type="number" id="shed${i}" placeholder="${y.replace('%','')}" step="1" min="0" max="100"> %
-        </td>
-      </tr>
-    `);
-  });
-  document.getElementById('totalHeadcount').textContent = `Total Headcount: ${total}`;
-  document.getElementById('loader').style.display = 'none';
-  document.getElementById('inputs').style.display = 'block';
+  for (let r of RATIONS) {
+    if (/total/i.test(r.Ingredient)) continue;
+    const qty = r[shed.Ration];
+    if (qty != null) total += qty * percent * shed.Headcount;
+  }
+  return total;
 }
 
-function generatePlan(){
-  const percentages = SHEDS.map((s,i)=>{
-    let v = document.getElementById(`shed${i}`).value.trim();
-    if(!v) v = (YESTERDAY[s.Shed]||"0%").replace('%','');
-    return parseFloat(v)||0;
-  });
+async function initInputs() {
+  showLoading(true);
+  await fetchRations();
+  await fetchSheds();
+  const yesterdays = await fetchYesterdays();
+  const totalHeadcount = SHEDS.reduce((sum, s) => sum + (s.Headcount || 0), 0);
+  document.getElementById("totalHeadcount").textContent = `Total Headcount: ${totalHeadcount}`;
+  const container = document.getElementById("inputs");
+  container.innerHTML = "<table><thead><tr><th>Shed</th><th>% of Target</th></tr></thead><tbody>" +
+    SHEDS.map((s,i)=>{
+      const placeholder = yesterdays[s.Shed] || "0%";
+      return `<tr><td>${s.Shed}</td><td><input type="text" id="shed${i}" placeholder="${placeholder}"></td></tr>`;
+    }).join('') +
+    "</tbody></table>";
+  showLoading(false);
+}
 
-  let html = `<h2 style="color:#2a6ebb">Feeding Plan - ${new Date().toLocaleDateString()}</h2>`;
+function generatePlan() {
+  const percentages = SHEDS.map((s,i)=>{
+    let val = document.getElementById("shed"+i).value.trim();
+    if (!val) val = document.getElementById("shed"+i).placeholder;
+    if (!val.endsWith("%")) val += "%";
+    return val;
+  });
 
   const rationGroups = {};
   SHEDS.forEach((shed,i)=>{
-    const pct = percentages[i]/100;
-    if(!rationGroups[shed.Ration]) rationGroups[shed.Ration] = [];
-    rationGroups[shed.Ration].push({shed, percent:pct});
+    const percent = parseFloat(percentages[i])/100 || 0;
+    const total = computeShedTotal(shed, percent);
+    if (!rationGroups[shed.Ration]) rationGroups[shed.Ration] = [];
+    rationGroups[shed.Ration].push({shed, percent, total, percentStr: percentages[i]});
   });
 
-  Object.entries(rationGroups).forEach(([ration,sheds],idx)=>{
-    html += `<h3 style="margin-top:25px;color:#2a6ebb">Mix ${idx+1} - ${ration}</h3>`;
-    html += `<table><thead><tr>
-      <th>Shed</th><th>%</th><th>Headcount</th>
-    </tr></thead><tbody>`;
+  const allBatches = [];
+  Object.entries(rationGroups).forEach(([rationType,sheds])=>{
+    sheds.sort((a,b)=>b.total-a.total);
+    let batches=[], current={sheds:[], total:0};
     sheds.forEach(s=>{
-      html += `<tr><td>${s.shed.Shed}</td><td>${(s.percent*100).toFixed(0)}%</td><td>${s.shed.Headcount}</td></tr>`;
+      if(s.total + current.total <= MAX_BATCH || current.sheds.length===0){
+        current.sheds.push(s); current.total += s.total;
+      } else { batches.push(current); current={sheds:[s], total:s.total}; }
     });
-    html += `</tbody></table>`;
+    if(current.sheds.length>0) batches.push(current);
+    batches.forEach((batch,idx)=>{ allBatches.push({rationType, idx:idx+1, sheds:batch.sheds, total:batch.total}); });
   });
 
-  document.getElementById('planOutput').innerHTML = html;
-  document.getElementById('planOutput').style.display = 'block';
-  document.getElementById('pdfBtn').style.display = 'block';
-}
-
-async function savePDF(){
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF('p', 'pt', 'a4');
-  const content = document.getElementById('planOutput');
-
-  await doc.html(content, {
-    callback: function (doc) {
-      doc.save('FeedingPlan.pdf');
-    },
-    x: 10,
-    y: 10,
-    html2canvas: { scale: 0.8 }
+  const output = document.getElementById("planOutput");
+  output.innerHTML = `<h2>Date: ${new Date().toISOString().slice(0,10)}</h2>`;
+  allBatches.forEach(batch=>{
+    let html = `<h3>Mix ${batch.idx} - ${batch.rationType} - Total: ${Math.round(batch.total)} kg</h3>`;
+    html += `<table><tr><th>Shed</th><th>%</th><th>Headcount</th><th>Total (kg)</th></tr>`;
+    batch.sheds.forEach(s=>{
+      html += `<tr><td>${s.shed.Shed}</td><td>${s.percentStr}</td><td>${Math.round(s.shed.Headcount)}</td><td>${Math.round(s.total)}</td></tr>`;
+    });
+    html += `</table>`;
+    html += `<table><tr><th>Ingredient</th><th>Quantity (kg)</th></tr>`;
+    const ingredientTotals = {};
+    RATIONS.forEach(r=>{ if(!/total/i.test(r.Ingredient)) ingredientTotals[r.Ingredient]=0; });
+    batch.sheds.forEach(s=>{
+      RATIONS.forEach(r=>{
+        if (/total/i.test(r.Ingredient)) return;
+        const q = r[s.shed.Ration];
+        if (q != null) ingredientTotals[r.Ingredient] += q * s.percent * s.shed.Headcount;
+      });
+    });
+    Object.entries(ingredientTotals).forEach(([ing,qty])=>{
+      html += `<tr><td>${ing}</td><td>${Math.round(qty)}</td></tr>`;
+    });
+    html += `</table>`;
+    output.innerHTML += html;
   });
 }
 
-loadData();
+function printPlan() { window.print(); }
+initInputs();
 </script>
-
 </body>
 </html>
-
