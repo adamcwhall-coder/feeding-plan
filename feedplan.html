@@ -24,9 +24,20 @@ button { margin: 10px 5px; padding: 12px 18px; font-size: 16px; background-color
 button:hover { background-color: #1f539d; }
 button:active { transform: scale(0.98); }
 
+#planOutput { margin-top: 20px; background: #fff; padding: 20px; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+#planOutput h2 { margin-top: 0; }
+#planOutput table { margin-top: 10px; }
+
 @media (max-width: 600px) {
   button { width: 100%; margin: 8px 0; font-size: 18px; }
   input[type="text"] { width: 100%; }
+}
+@media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  body { background: white !important; }
+  table th { background-color: #2a6ebb !important; color: white !important; }
+  tr:nth-child(even) { background-color: #f9f9f9 !important; }
+  button, #inputs, #loading { display: none !important; }
 }
 </style>
 </head>
@@ -38,7 +49,10 @@ button:active { transform: scale(0.98); }
 <div id="inputs"></div>
 <div style="text-align:center;">
   <button onclick="generatePlan()">🚜 Generate Plan</button>
+  <button onclick="printPlan()">🖨️ Print</button>
+  <button onclick="downloadPDF()">📄 Download PDF</button>
 </div>
+<div id="planOutput"></div>
 
 <!-- Libraries -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -161,7 +175,7 @@ function generatePlan() {
     planHTML += `</table>`;
   });
 
-  // Open new full-screen tab with plan + buttons
+  // Open new full-screen tab with the plan
   const newWindow = window.open('', '_blank');
   newWindow.document.write(`
     <html>
@@ -174,37 +188,34 @@ function generatePlan() {
         th, td { border: 1px solid #444; padding: 8px; text-align: center; }
         th { background: #2a6ebb; color: white; }
         tr:nth-child(even) { background: #f9f9f9; }
-        button { margin: 5px; padding: 10px 15px; font-size: 16px; background-color: #2a6ebb; color: white; border: none; border-radius: 6px; cursor: pointer; }
-        button:hover { background-color: #1f539d; }
       </style>
     </head>
     <body>
-      <div style="text-align:center;">
-        <button onclick="window.print()">🖨️ Print</button>
-        <button onclick="downloadPDF()">📄 Download PDF</button>
-      </div>
       ${planHTML}
-      <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-      <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-      <script>
-      async function downloadPDF() {
-        const { jsPDF } = window.jspdf;
-        const plan = document.body;
-        const canvas = await html2canvas(plan, { scale: 2 });
-        const imgData = canvas.toDataURL("image/jpeg", 0.95);
-        const doc = new jsPDF('p', 'pt', 'a4');
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const imgProps = doc.getImageProperties(imgData);
-        const imgWidth = pageWidth - 40;
-        const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
-        doc.addImage(imgData, 'JPEG', 20, 20, imgWidth, imgHeight);
-        doc.save('feeding_plan_${new Date().toISOString().slice(0,10)}.pdf');
-      }
-      </script>
     </body>
     </html>
   `);
   newWindow.document.close();
+}
+
+function printPlan() { window.print(); }
+
+async function downloadPDF() {
+  const { jsPDF } = window.jspdf;
+  const plan = document.getElementById("planOutput");
+  if (!plan) return;
+
+  const canvas = await html2canvas(plan, { scale: 2 });
+  const imgData = canvas.toDataURL("image/jpeg", 0.95);
+
+  const doc = new jsPDF('p', 'pt', 'a4');
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const imgProps = doc.getImageProperties(imgData);
+  const imgWidth = pageWidth - 40;
+  const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+
+  doc.addImage(imgData, 'JPEG', 20, 20, imgWidth, imgHeight);
+  doc.save(`feeding_plan_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 initInputs();
