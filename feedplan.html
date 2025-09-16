@@ -175,6 +175,9 @@ function generatePlan() {
     html += `</table>`;
     output.innerHTML += html;
   });
+
+  // Scroll smoothly to the plan output
+  output.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function printPlan() { window.print(); }
@@ -190,7 +193,6 @@ async function downloadPDF() {
 
   const doc = new jsPDF('p', 'pt', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
   const imgProps = doc.getImageProperties(imgData);
   const imgWidth = pageWidth - 40;
   const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
