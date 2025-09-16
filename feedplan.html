@@ -23,8 +23,8 @@ table { border-collapse: collapse; width: 100%; margin-bottom: 20px; display: bl
 th, td { border: 1px solid #444; padding: 8px; text-align: center; min-width: 100px; }
 th { background: #2a6ebb; color: white; }
 tr:nth-child(even) { background: #f9f9f9; }
-input[type="text"] { width: 70px; padding: 5px; text-align: center; border-radius: 4px; border: 1px solid #ccc; }
-input[type="text"]:focus { border-color: #2a6ebb; outline: none; background-color: #fff; }
+input[type="number"] { width: 70px; padding: 5px; text-align: center; border-radius: 4px; border: 1px solid #ccc; }
+input[type="number"]:focus { border-color: #2a6ebb; outline: none; background-color: #fff; }
 button { margin-top: 15px; padding: 10px; font-size: 16px; background-color: #2a6ebb; color: white; border: none; border-radius: 6px; cursor: pointer; transition: background-color 0.3s; }
 button:hover { background-color: #1f539d; }
 #planOutput { margin-top: 20px; background: #fff; padding: 15px; border: 1px solid #ccc; }
@@ -53,8 +53,8 @@ button:hover { background-color: #1f539d; }
 
 <script>
 const MAX_BATCH = 2100;
-const RATIONS_URL = "https://script.google.com/macros/s/AKfycbz7xmhtWaSwMcKVqZuuSo1eIAGOTKjThMYuDxyzKi3CNZ-uK8qAd_4ojJkVk8o0iwk/exec"; // Apps Script URL for Rations sheet
-const YESTERDAY_URL = "https://script.google.com/macros/s/AKfycbydhGdSJ52UomMLIP1GtxyVQe2dflny8PUIC5lfv0vIiqDis_AorTZr_MsbYWaPfCCI/exec"; // Apps Script URL for YesterdayFeed
+const RATIONS_URL = "https://script.google.com/macros/s/AKfycbz7xmhtWaSwMcKVqZuuSo1eIAGOTKjThMYuDxyzKi3CNZ-uK8qAd_4ojJkVk8o0iwk/exec"; 
+const YESTERDAY_URL = "https://script.google.com/macros/s/AKfycbydhGdSJ52UomMLIP1GtxyVQe2dflny8PUIC5lfv0vIiqDis_AorTZr_MsbYWaPfCCI/exec"; 
 const SHEDS_URL = "https://script.google.com/macros/s/AKfycbwgA3g-Ps70NR3oBcgv11PU9wPwWg2Q5J_QHVF-aZ_Ix6G6rvOkGoYtYh1gZsL0Ed1K/exec";
 
 let RATIONS = [], SHEDS = [];
@@ -77,10 +77,10 @@ async function fetchYesterdays() {
     const yesterdays = {};
     SHEDS.forEach(s => {
       const row = data.find(r => r[0] === s.Shed);
-      if (!row || row[1] === "No Data" || row[1]==null || row[1]==="") yesterdays[s.Shed] = "0%";
-      else if (typeof row[1] === "number") yesterdays[s.Shed] = row[1] <= 1 ? Math.round(row[1]*100)+"%" : Math.round(row[1])+"%";
-      else if (typeof row[1] === "string" && row[1].includes("%")) yesterdays[s.Shed] = row[1].trim();
-      else { const num = parseFloat(row[1]); yesterdays[s.Shed] = isNaN(num) ? "0%" : Math.round(num)+"%"; }
+      if (!row || row[1] === "No Data" || row[1]==null || row[1]==="") yesterdays[s.Shed] = "0";
+      else if (typeof row[1] === "number") yesterdays[s.Shed] = row[1] <= 1 ? Math.round(row[1]*100).toString() : Math.round(row[1]).toString();
+      else if (typeof row[1] === "string" && row[1].includes("%")) yesterdays[s.Shed] = row[1].replace("%","").trim();
+      else { const num = parseFloat(row[1]); yesterdays[s.Shed] = isNaN(num) ? "0" : Math.round(num).toString(); }
     });
     return yesterdays;
   } catch (e) { console.error("Error fetching yesterday's data:", e); return {}; }
@@ -106,8 +106,8 @@ async function initInputs() {
   const container = document.getElementById("inputs");
   container.innerHTML = "<table><thead><tr><th>Shed</th><th>% of Target</th></tr></thead><tbody>" +
     SHEDS.map((s,i)=>{
-      const placeholder = yesterdays[s.Shed] || "0%";
-      return `<tr><td>${s.Shed}</td><td><input type="text" id="shed${i}" placeholder="${placeholder}"></td></tr>`;
+      const placeholder = yesterdays[s.Shed] || "0";
+      return `<tr><td>${s.Shed}</td><td><input type="number" inputmode="decimal" min="0" max="200" id="shed${i}" placeholder="${placeholder}"></td></tr>`;
     }).join('') +
     "</tbody></table>";
   showLoading(false);
@@ -117,8 +117,7 @@ function generatePlan() {
   const percentages = SHEDS.map((s,i)=>{
     let val = document.getElementById("shed"+i).value.trim();
     if (!val) val = document.getElementById("shed"+i).placeholder;
-    if (!val.endsWith("%")) val += "%";
-    return val;
+    return val; // keep as plain number
   });
 
   const rationGroups = {};
@@ -126,7 +125,7 @@ function generatePlan() {
     const percent = parseFloat(percentages[i])/100 || 0;
     const total = computeShedTotal(shed, percent);
     if (!rationGroups[shed.Ration]) rationGroups[shed.Ration] = [];
-    rationGroups[shed.Ration].push({shed, percent, total, percentStr: percentages[i]});
+    rationGroups[shed.Ration].push({shed, percent, total, percentStr: percentages[i]+"%"});
   });
 
   const allBatches = [];
