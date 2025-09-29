@@ -150,27 +150,49 @@ function generatePlan() {
   output.innerHTML = `<button id="printBtn" onclick="printPlan()">Print</button>
                       <button id="pdfBtn" onclick="downloadPDF()">Download PDF</button>
                       <h2>Date: ${new Date().toISOString().slice(0,10)}</h2>`;
+
+  let cumulativeIngredientsGlobal = {};
   PLAN.forEach(batch=>{
     let html = `<h3>Mix ${batch.idx} - ${batch.rationType} - Total: ${Math.round(batch.total)} kg</h3>`;
-    html += `<table><tr><th>Shed</th><th>%</th><th>Headcount</th><th>Total (kg)</th></tr>`;
+
+    // Shed Table with Cumulative Totals
+    let cumulativeShed = 0;
+    html += `<table><tr><th>Shed</th><th>%</th><th>Headcount</th><th>Total (kg)</th><th>Cumulative Total (kg)</th></tr>`;
     batch.sheds.forEach(s=>{
-      html += `<tr><td>${s.shed.Shed}</td><td>${s.percentStr}</td><td>${Math.round(s.shed.Headcount)}</td><td>${Math.round(s.total)}</td></tr>`;
+      cumulativeShed += s.total;
+      html += `<tr>
+                 <td>${s.shed.Shed}</td>
+                 <td>${s.percentStr}</td>
+                 <td>${Math.round(s.shed.Headcount)}</td>
+                 <td>${Math.round(s.total)}</td>
+                 <td>${Math.round(cumulativeShed)}</td>
+               </tr>`;
     });
     html += `</table>`;
-    const ingredientTotals = {};
-    RATIONS.forEach(r=>{ if(!/total/i.test(r.Ingredient)) ingredientTotals[r.Ingredient]=0; });
+
+    // Ingredient Table with Cumulative Totals
+    let cumulativeIngredientsBatch = {};
     batch.sheds.forEach(s=>{
       RATIONS.forEach(r=>{
         if (/total/i.test(r.Ingredient)) return;
         const q = r[s.shed.Ration];
-        if (q != null) ingredientTotals[r.Ingredient] += q * s.percent * s.shed.Headcount;
+        if (q != null) {
+          cumulativeIngredientsBatch[r.Ingredient] = (cumulativeIngredientsBatch[r.Ingredient] || 0) + q*s.percent*s.shed.Headcount;
+          cumulativeIngredientsGlobal[r.Ingredient] = (cumulativeIngredientsGlobal[r.Ingredient] || 0) + q*s.percent*s.shed.Headcount;
+        }
       });
     });
-    html += `<table><tr><th>Ingredient</th><th>Quantity (kg)</th></tr>`;
-    Object.entries(ingredientTotals).forEach(([ing,qty])=>{
-      html += `<tr><td>${ing}</td><td>${Math.round(qty)}</td></tr>`;
+
+    html += `<table><tr><th>Ingredient</th><th>Quantity (kg)</th><th>Cumulative Total (kg)</th></tr>`;
+    Object.entries(cumulativeIngredientsBatch).forEach(([ing, qty])=>{
+      html += `<tr>
+                 <td>${ing}</td>
+                 <td>${Math.round(qty)}</td>
+                 <td>${Math.round(cumulativeIngredientsGlobal[ing])}</td>
+               </tr>`;
     });
     html += `</table>`;
+
     output.innerHTML += html;
   });
 
@@ -189,7 +211,7 @@ function downloadPDF() {
   img.src = "https://raw.githubusercontent.com/adamcwhall-coder/feeding-plan/main/0EC2FEE7-BD1C-4332-AAB4-AAD5FF7BD04A.png";
 
   img.onload = function(){
-    // Cover page with correct aspect ratio
+    // Cover page
     const pdfWidth = 140;
     const pdfHeight = (img.height / img.width) * pdfWidth;
     doc.addImage(img, "JPEG", 35, 20, pdfWidth, pdfHeight);
@@ -203,35 +225,44 @@ function downloadPDF() {
     y += 15;
     doc.text(`Total Headcount: ${TOTAL_HEADCOUNT}`, 105, y, { align: "center" });
 
-    // Start tables on a new page
+    // Tables
+    let cumulativeIngredientsGlobal = {};
     PLAN.forEach((batch, idx)=>{
       doc.addPage();
       doc.setFontSize(14);
       doc.text(`Mix ${batch.idx} - ${batch.rationType} - Total: ${Math.round(batch.total)} kg`, 14, 20);
 
+      // Shed table with cumulative
+      let cumulativeShed = 0;
       doc.autoTable({
         startY: 30,
-        head: [["Shed","%","Headcount","Total (kg)"]],
-        body: batch.sheds.map(s=>[s.shed.Shed,s.percentStr,Math.round(s.shed.Headcount),Math.round(s.total)]),
+        head: [["Shed","%","Headcount","Total (kg)","Cumulative Total (kg)"]],
+        body: batch.sheds.map(s=>{
+          cumulativeShed += s.total;
+          return [s.shed.Shed,s.percentStr,Math.round(s.shed.Headcount),Math.round(s.total),Math.round(cumulativeShed)];
+        }),
         theme: "striped",
         headStyles: { fillColor:[42,110,187], halign:"center" },
         styles: { halign:"center" }
       });
 
-      const ingredientTotals = {};
-      RATIONS.forEach(r=>{ if(!/total/i.test(r.Ingredient)) ingredientTotals[r.Ingredient]=0; });
+      // Ingredient table with cumulative
+      let cumulativeIngredientsBatch = {};
       batch.sheds.forEach(s=>{
         RATIONS.forEach(r=>{
           if(/total/i.test(r.Ingredient)) return;
           const q=r[s.shed.Ration];
-          if(q!=null) ingredientTotals[r.Ingredient]+=q*s.percent*s.shed.Headcount;
+          if(q!=null){
+            cumulativeIngredientsBatch[r.Ingredient] = (cumulativeIngredientsBatch[r.Ingredient]||0) + q*s.percent*s.shed.Headcount;
+            cumulativeIngredientsGlobal[r.Ingredient] = (cumulativeIngredientsGlobal[r.Ingredient]||0) + q*s.percent*s.shed.Headcount;
+          }
         });
       });
 
       doc.autoTable({
         startY: doc.lastAutoTable.finalY + 10,
-        head: [["Ingredient","Quantity (kg)"]],
-        body: Object.entries(ingredientTotals).map(([ing,qty])=>[ing,Math.round(qty)]),
+        head: [["Ingredient","Quantity (kg)","Cumulative Total (kg)"]],
+        body: Object.entries(cumulativeIngredientsBatch).map(([ing,qty])=>[ing,Math.round(qty),Math.round(cumulativeIngredientsGlobal[ing])]),
         theme: "grid",
         headStyles: { fillColor:[42,110,187], halign:"center" },
         styles: { halign:"center" }
