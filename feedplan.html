@@ -82,9 +82,18 @@ async function fetchYesterdays() {
     const yesterdays = {};
     SHEDS.forEach(s => {
       const row = data.find(r => r[0] === s.Shed);
-      if (!row || row[1] === "No Data" || row[1]==null || row[1]==="") yesterdays[s.Shed] = "0";
-      else if (typeof row[1] === "number") yesterdays[s.Shed] = row[1] <= 1 ? Math.round(row[1]*100) : Math.round(row[1]);
-      else { const num = parseFloat(row[1]); yesterdays[s.Shed] = isNaN(num) ? 0 : Math.round(num); }
+      if (!row || row[1] === "No Data" || row[1]==null || row[1]==="") {
+        yesterdays[s.Shed] = "0";
+      } else if (typeof row[1] === "number") {
+        if (row[1] > 0 && row[1] < 1) {
+          yesterdays[s.Shed] = (row[1] * 100).toFixed(0);
+        } else {
+          yesterdays[s.Shed] = row[1].toFixed(0);
+        }
+      } else {
+        const num = parseFloat(row[1]);
+        yesterdays[s.Shed] = isNaN(num) ? 0 : num.toFixed(0);
+      }
     });
     return yesterdays;
   } catch (e) { console.error("Error fetching yesterday's data:", e); return {}; }
@@ -189,7 +198,6 @@ function downloadPDF() {
   img.src = "https://raw.githubusercontent.com/adamcwhall-coder/feeding-plan/main/0EC2FEE7-BD1C-4332-AAB4-AAD5FF7BD04A.png";
 
   img.onload = function(){
-    // Cover page with correct aspect ratio
     const pdfWidth = 140;
     const pdfHeight = (img.height / img.width) * pdfWidth;
     doc.addImage(img, "JPEG", 35, 20, pdfWidth, pdfHeight);
@@ -203,7 +211,6 @@ function downloadPDF() {
     y += 15;
     doc.text(`Total Headcount: ${TOTAL_HEADCOUNT}`, 105, y, { align: "center" });
 
-    // Start tables on a new page
     PLAN.forEach((batch, idx)=>{
       doc.addPage();
       doc.setFontSize(14);
