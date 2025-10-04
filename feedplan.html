@@ -34,8 +34,6 @@ button:hover { opacity: 0.85; }
   #inputs, #loading, #generateBtn, #printBtn, #pdfBtn { display: none !important; }
 }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 
@@ -150,11 +148,11 @@ function generatePlan(){
 
   PLAN.forEach(batch=>{
     let html=`<h3>Mix ${batch.idx} - ${batch.rationType} - Total: ${Math.round(batch.total)} kg</h3>`;
-    html+=`<table><tr><th>Shed</th><th>%</th><th>Headcount</th><th>Total (kg)</th><th>Remaining (kg)</th></tr>`;
+    html+=`<table class="shed-table"><tr><th></th><th>Shed</th><th>%</th><th>Headcount</th><th>Total (kg)</th><th>Remaining (kg)</th></tr>`;
     let remaining=batch.total;
     batch.sheds.forEach(s=>{
       remaining-=s.total;
-      html+=`<tr><td>${s.shed.Shed}</td><td>${s.percentStr}</td><td>${Math.round(s.shed.Headcount)}</td><td>${Math.round(s.total)}</td><td>${Math.max(Math.round(remaining),0)}</td></tr>`;
+      html+=`<tr draggable="true"><td class="drag-handle">⋮⋮</td><td>${s.shed.Shed}</td><td>${s.percentStr}</td><td>${Math.round(s.shed.Headcount)}</td><td>${Math.round(s.total)}</td><td>${Math.max(Math.round(remaining),0)}</td></tr>`;
     });
     html+=`</table>`;
 
@@ -178,28 +176,25 @@ function generatePlan(){
   });
 
   document.querySelectorAll(".ingredient-table").forEach(makeIngredientTableDraggable);
+  document.querySelectorAll(".shed-table").forEach(makeShedTableDraggable);
   document.getElementById("planOutput").scrollIntoView({behavior:"smooth"});
 }
 
-// ---------- DRAG & DROP (Desktop + Mobile) ----------
-function makeIngredientTableDraggable(table){
-  const tbody=table.querySelector("tbody");
-  let dragRow=null,startY=0;
+// ---------- DRAG & DROP ----------
+function makeIngredientTableDraggable(table){ makeDraggable(table, 2, 3); }
+function makeShedTableDraggable(table){ makeDraggable(table, 4, 5); }
 
+function makeDraggable(table, qtyIndex, cumulativeIndex){
+  const tbody=table.querySelector("tbody")||table;
+  let dragRow=null,startY=0;
   tbody.querySelectorAll("tr").forEach(row=>{
     const handle=row.querySelector(".drag-handle");
     if(!handle)return;
 
-    // desktop drag
-    handle.addEventListener("dragstart",e=>{
-      dragRow=row;row.style.opacity="0.5";
-    });
+    handle.addEventListener("dragstart",()=>{dragRow=row;row.style.opacity="0.5";});
     handle.addEventListener("dragend",()=>{row.style.opacity="";dragRow=null;});
 
-    // touch support
-    handle.addEventListener("touchstart",e=>{
-      dragRow=row;startY=e.touches[0].clientY;row.style.opacity="0.5";
-    });
+    handle.addEventListener("touchstart",e=>{dragRow=row;startY=e.touches[0].clientY;row.style.opacity="0.5";});
     handle.addEventListener("touchmove",e=>{
       if(!dragRow)return;
       e.preventDefault();
@@ -212,16 +207,14 @@ function makeIngredientTableDraggable(table){
       if(over&&over!==dragRow){
         if(y<over.getBoundingClientRect().top+over.offsetHeight/2)
           tbody.insertBefore(dragRow,over);
-        else
-          tbody.insertBefore(dragRow,over.nextSibling);
+        else tbody.insertBefore(dragRow,over.nextSibling);
       }
     });
     handle.addEventListener("touchend",()=>{
-      if(dragRow){dragRow.style.opacity="";dragRow=null;recalcCumulative(tbody);}
+      if(dragRow){dragRow.style.opacity="";dragRow=null;recalcCumulative(tbody,qtyIndex,cumulativeIndex);}
     });
   });
 
-  // desktop drop logic
   tbody.addEventListener("dragover",e=>e.preventDefault());
   tbody.addEventListener("drop",e=>{
     e.preventDefault();
@@ -232,23 +225,40 @@ function makeIngredientTableDraggable(table){
       const dropIndex=rows.indexOf(target);
       if(dragIndex<dropIndex)tbody.insertBefore(dragRow,target.nextSibling);
       else tbody.insertBefore(dragRow,target);
-      recalcCumulative(tbody);
+      recalcCumulative(tbody,qtyIndex,cumulativeIndex);
     }
   });
 }
 
-function recalcCumulative(tbody){
-  let run=0;
+function recalcCumulative(tbody,qtyIndex,cumulativeIndex){
+  let run=tbody.classList.contains("shed-table")?getTotalBatch(tbody):0;
+  if(tbody.classList.contains("shed-table")){
+    tbody.querySelectorAll("tr").forEach(r=>{
+      const val=parseFloat(r.children[qtyIndex].textContent)||0;
+      run-=val;
+      r.children[cumulativeIndex].textContent=Math.max(Math.round(run),0);
+    });
+  } else {
+    let total=0;
+    tbody.querySelectorAll("tr").forEach(r=>{
+      const val=parseFloat(r.children[qtyIndex].textContent)||0;
+      total+=val;
+      r.children[cumulativeIndex].textContent=Math.round(total);
+    });
+  }
+}
+function getTotalBatch(tbody){
+  let total=0;
   tbody.querySelectorAll("tr").forEach(r=>{
-    const qty=parseFloat(r.children[2].textContent)||0;
-    run+=qty;
-    r.children[3].textContent=Math.round(run);
+    const v=parseFloat(r.children[4].textContent)||0;
+    total+=v;
   });
+  return total;
 }
 
 // ---------- UTILITIES ----------
 function printPlan(){window.print();}
-function downloadPDF(){/* unchanged PDF logic from previous version */}
+function downloadPDF(){}
 initInputs();
 </script>
 </body>
