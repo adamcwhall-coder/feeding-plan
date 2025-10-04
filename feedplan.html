@@ -65,21 +65,10 @@ const SHEDS_URL = "https://script.google.com/macros/s/AKfycbwgA3g-Ps70NR3oBcgv11
 let RATIONS = [], SHEDS = [], PLAN = [], TOTAL_HEADCOUNT = 0;
 
 function showLoading(show) { document.getElementById("loading").style.display = show ? "block" : "none"; }
+async function fetchRations() { try { RATIONS = await (await fetch(RATIONS_URL + "?cacheBust=" + Date.now())).json(); } catch (e) { console.error("Error fetching rations:", e); RATIONS = []; } }
+async function fetchSheds() { try { SHEDS = await (await fetch(SHEDS_URL + "?cacheBust=" + Date.now())).json(); } catch (e) { console.error("Error fetching sheds:", e); SHEDS = []; }
 
-async function fetchRations() {
-  try { RATIONS = await (await fetch(RATIONS_URL + "?cacheBust=" + Date.now())).json(); }
-  catch (e) { console.error("Error fetching rations:", e); RATIONS = []; }
-}
-
-async function fetchSheds() {
-  try { SHEDS = await (await fetch(SHEDS_URL + "?cacheBust=" + Date.now())).json(); }
-  catch (e) { console.error("Error fetching sheds:", e); SHEDS = []; }
-}
-
-/*
- Restored original robust percentage detection:
- - Handles "105%", "1.05", 0.87, 105, "105", etc.
-*/
+/* Original percentage logic */
 async function fetchYesterdays() {
   try {
     const data = await (await fetch(YESTERDAY_URL + "?cacheBust=" + Date.now())).json();
@@ -104,29 +93,13 @@ async function fetchYesterdays() {
           if (isNaN(val)) val = 0;
         } else if (typeof raw === 'number') {
           val = raw;
-        } else {
-          val = 0;
-        }
+        } else { val = 0; }
 
-        if (val === 0) {
-          display = "0";
-        } else if (rawIsString && rawHasPercent) {
-          // "105%" -> 105
-          display = Math.round(val).toString();
-        } else {
-          // numeric or string without % sign
-          if (val > 0 && val < 1) {
-            // 0.87 -> 87
-            val = val * 100;
-          } else if (val >= 1 && val < 100) {
-            // This range is ambiguous:
-            // - If it's exactly 1 -> treat as 100
-            // - If it has a fractional part (e.g. 1.05) -> treat as decimal percent (1.05 -> 105)
-            // - Otherwise assume it's already a percentage (e.g. 50 -> 50)
-            if (val === 1 || (val < 10 && (val % 1 !== 0))) {
-              val = val * 100;
-            }
-          }
+        if (val === 0) { display = "0"; }
+        else if (rawIsString && rawHasPercent) { display = Math.round(val).toString(); }
+        else {
+          if (val > 0 && val < 1) val = val * 100;
+          else if (val >= 1 && val < 100) { if (val === 1 || (val < 10 && (val % 1 !== 0))) val = val * 100; }
           display = Math.round(val).toString();
         }
       }
@@ -134,10 +107,7 @@ async function fetchYesterdays() {
       yesterdays[s.Shed] = display;
     });
     return yesterdays;
-  } catch (e) {
-    console.error("Error fetching yesterday's data:", e);
-    return {};
-  }
+  } catch (e) { console.error("Error fetching yesterday's data:", e); return {}; }
 }
 
 function computeShedTotal(shed, percent) {
@@ -286,7 +256,6 @@ function downloadPDF() {
         styles: { halign:"center" }
       });
 
-      // Per-mix ingredient totals and running totals within that mix only
       const ingredientTotals = {};
       RATIONS.forEach(r=>{ if(!/total/i.test(r.Ingredient)) ingredientTotals[r.Ingredient]=0; });
       batch.sheds.forEach(s=>{
