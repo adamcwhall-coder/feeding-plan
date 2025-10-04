@@ -24,6 +24,8 @@ button { margin-top: 15px; padding: 10px; font-size: 16px; border: none; border-
 button:hover { opacity: 0.85; }
 #planOutput { margin-top: 20px; background: #fff; padding: 15px; border: 1px solid #ccc; }
 .ingredient-table th { cursor: pointer; }
+.drag-handle { cursor: grab; color: #777; font-weight: bold; padding-right: 6px; }
+.drag-handle:hover { color: #2a6ebb; }
 @media (max-width: 500px) { button { width: 100%; margin-top: 10px; } }
 @media print {
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -42,6 +44,10 @@ button:hover { opacity: 0.85; }
 <div id="loading"><div class="spinner"></div> Loading sheds...</div>
 <div id="totalHeadcount">Total Headcount: 0</div>
 <div id="inputs"></div>
+<div style="text-align:center; margin-bottom:15px;">
+  <label for="maxBatch">Max Batch Weight (kg): </label>
+  <input type="number" id="maxBatch" value="2600" min="100" step="100">
+</div>
 <button id="generateBtn" onclick="generatePlan()">Generate Plan</button>
 
 <div id="planOutput" style="display:none;">
@@ -50,89 +56,54 @@ button:hover { opacity: 0.85; }
 </div>
 
 <script>
-let MAX_BATCH = 2600;
-const RATIONS_URL = "https://script.google.com/macros/s/AKfycbz7xmhtWaSwMcKVqZuuSo1eIAGOTKjThMYuDxyzKi3CNZ-uK8qAd_4ojJkVk8o0iwk/exec";
-const YESTERDAY_URL = "https://script.google.com/macros/s/AKfycbydhGdSJ52UomMLIP1GtxyVQe2dflny8PUIC5lfv0vIiqDis_AorTZr_MsbYWaPfCCI/exec";
-const SHEDS_URL = "https://script.google.com/macros/s/AKfycbwgA3g-Ps70NR3oBcgv11PU9wPwWg2Q5J_QHVF-aZ_Ix6G6rvOkGoYtYh1gZsL0Ed1K/exec";
+const RATIONS_URL="https://script.google.com/macros/s/AKfycbz7xmhtWaSwMcKVqZuuSo1eIAGOTKjThMYuDxyzKi3CNZ-uK8qAd_4ojJkVk8o0iwk/exec";
+const YESTERDAY_URL="https://script.google.com/macros/s/AKfycbydhGdSJ52UomMLIP1GtxyVQe2dflny8PUIC5lfv0vIiqDis_AorTZr_MsbYWaPfCCI/exec";
+const SHEDS_URL="https://script.google.com/macros/s/AKfycbwgA3g-Ps70NR3oBcgv11PU9wPwWg2Q5J_QHVF-aZ_Ix6G6rvOkGoYtYh1gZsL0Ed1K/exec";
 
-let RATIONS=[], SHEDS=[], PLAN=[], TOTAL_HEADCOUNT=0;
+let RATIONS=[], SHEDS=[], PLAN=[], TOTAL_HEADCOUNT=0, MAX_BATCH=2600;
 
-function showLoading(show){ document.getElementById("loading").style.display = show ? "block" : "none"; }
-async function fetchRations(){ try{ RATIONS = await (await fetch(RATIONS_URL+"?cacheBust="+Date.now())).json(); }catch(e){ console.error(e); RATIONS=[]; } }
-async function fetchSheds(){ try{ SHEDS = await (await fetch(SHEDS_URL+"?cacheBust="+Date.now())).json(); }catch(e){ console.error(e); SHEDS=[]; } }
+function showLoading(show){document.getElementById("loading").style.display=show?"block":"none";}
+
+async function fetchRations(){try{RATIONS=await (await fetch(RATIONS_URL+"?cacheBust="+Date.now())).json();}catch(e){RATIONS=[];}}
+async function fetchSheds(){try{SHEDS=await (await fetch(SHEDS_URL+"?cacheBust="+Date.now())).json();}catch(e){SHEDS=[];}}
 
 async function fetchYesterdays(){
   try{
-    const data = await (await fetch(YESTERDAY_URL+"?cacheBust="+Date.now())).json();
+    const data=await (await fetch(YESTERDAY_URL+"?cacheBust="+Date.now())).json();
     const yesterdays={};
     SHEDS.forEach(s=>{
-      const row = data.find(r=>r[0]===s.Shed);
+      const row=data.find(r=>r[0]===s.Shed);
       let display="0";
-      if(row && row[1]!="No Data" && row[1]!=null && row[1]!==""){
-        let raw=row[1], val=0, rawIsString=false, rawHasPercent=false;
-        if(typeof raw==='string'){ rawIsString=true; rawHasPercent=raw.indexOf('%')!==-1; val=parseFloat(raw.replace(/,/g,'').replace('%','').trim()); if(isNaN(val)) val=0; }
-        else if(typeof raw==='number') val=raw;
-        else val=0;
-        if(val===0) display="0";
-        else if(rawIsString && rawHasPercent) display=Math.round(val).toString();
-        else { if(val>0 && val<1) val=val*100; else if(val>=1 && val<100){ if(val===1||(val<10 && val%1!==0)) val=val*100; } display=Math.round(val).toString(); }
+      if(row&&row[1]&&row[1]!=="No Data"){
+        let raw=row[1];
+        if(typeof raw==="string"&&raw.includes("%")) raw=parseFloat(raw.replace("%",""));
+        else raw=parseFloat(raw);
+        if(raw>0&&raw<1) raw*=100;
+        display=Math.round(raw).toString();
       }
       yesterdays[s.Shed]=display;
     });
     return yesterdays;
-  }catch(e){ console.error(e); return {}; }
+  }catch(e){return {};}
 }
 
-function computeShedTotal(shed,percent){ let total=0; for(let r of RATIONS){ if(/total/i.test(r.Ingredient)) continue; const q=r[shed.Ration]; if(q!=null) total+=q*percent*shed.Headcount; } return total; }
+function computeShedTotal(shed,percent){
+  let total=0;
+  for(let r of RATIONS){if(/total/i.test(r.Ingredient))continue; const qty=r[shed.Ration]; if(qty!=null) total+=qty*percent*shed.Headcount;}
+  return total;
+}
 
 async function initInputs(){
   showLoading(true);
-  await fetchRations();
-  await fetchSheds();
-  const yesterdays = await fetchYesterdays();
+  await fetchRations(); await fetchSheds();
+  const yesterdays=await fetchYesterdays();
   TOTAL_HEADCOUNT=SHEDS.reduce((sum,s)=>sum+(s.Headcount||0),0);
   document.getElementById("totalHeadcount").textContent=`Total Headcount: ${TOTAL_HEADCOUNT}`;
   const container=document.getElementById("inputs");
-  container.innerHTML=`<table><thead><tr><th>Shed</th><th>% of Target</th></tr></thead><tbody>${
-    SHEDS.map((s,i)=>`<tr><td>${s.Shed}</td><td><input type="number" id="shed${i}" placeholder="${yesterdays[s.Shed]||0}"></td></tr>`).join('')
-  }</tbody></table>
-  <div style="text-align:center; margin:15px 0;">
-    <label for="maxBatch" style="font-weight:bold;">Max Batch Weight (kg): </label>
-    <input type="number" id="maxBatch" value="${MAX_BATCH}" min="100" step="50" style="width:120px; text-align:center;">
-  </div>`;
+  container.innerHTML="<table><thead><tr><th>Shed</th><th>% of Target</th></tr></thead><tbody>"+
+    SHEDS.map((s,i)=>`<tr><td>${s.Shed}</td><td><input type='number' id='shed${i}' placeholder='${yesterdays[s.Shed]||0}'></td></tr>`).join('')+
+    "</tbody></table>";
   showLoading(false);
-}
-
-function recalcCumulative(tbody){
-  let runningTotal=0;
-  tbody.querySelectorAll("tr").forEach(row=>{
-    const qty=parseFloat(row.children[1].textContent)||0;
-    runningTotal+=qty;
-    row.children[2].textContent=Math.round(runningTotal);
-  });
-}
-
-function makeIngredientTableDraggable(table){
-  const tbody = table.querySelector("tbody");
-  let dragSrcRow=null;
-  tbody.querySelectorAll("tr").forEach(row=>{
-    row.setAttribute("draggable", true);
-    row.addEventListener("dragstart", e=>{ dragSrcRow=row; e.dataTransfer.effectAllowed="move"; row.style.opacity="0.5"; });
-    row.addEventListener("dragend", e=>{ row.style.opacity=""; });
-    row.addEventListener("dragover", e=>{ e.preventDefault(); e.dataTransfer.dropEffect="move"; return false; });
-    row.addEventListener("drop", e=>{
-      e.stopPropagation();
-      if(dragSrcRow!==row){
-        const nodes=Array.from(tbody.querySelectorAll("tr"));
-        const dragIndex=nodes.indexOf(dragSrcRow);
-        const dropIndex=nodes.indexOf(row);
-        if(dragIndex<dropIndex){ tbody.insertBefore(dragSrcRow,row.nextSibling); } 
-        else{ tbody.insertBefore(dragSrcRow,row); }
-        recalcCumulative(tbody);
-      }
-      return false;
-    });
-  });
 }
 
 function generatePlan(){
@@ -140,6 +111,7 @@ function generatePlan(){
   const percentages=SHEDS.map((s,i)=>{
     const el=document.getElementById("shed"+i); let val=(el&&el.value)?el.value.trim():""; if(!val) val=el?el.placeholder:"0"; return parseFloat(val)/100||0;
   });
+
   const rationGroups={};
   SHEDS.forEach((shed,i)=>{
     const percent=percentages[i]; const total=computeShedTotal(shed,percent);
@@ -151,8 +123,11 @@ function generatePlan(){
   Object.entries(rationGroups).forEach(([rationType,sheds])=>{
     sheds.sort((a,b)=>b.total-a.total);
     let batches=[],current={sheds:[],total:0};
-    sheds.forEach(s=>{ if(s.total+current.total<=MAX_BATCH || current.sheds.length===0){current.sheds.push(s); current.total+=s.total;} else{batches.push(current); current={sheds:[s],total:s.total};} });
-    if(current.sheds.length>0) batches.push(current);
+    sheds.forEach(s=>{
+      if(s.total+current.total<=MAX_BATCH||current.sheds.length===0){current.sheds.push(s); current.total+=s.total;}
+      else{batches.push(current); current={sheds:[s],total:s.total};}
+    });
+    if(current.sheds.length>0)batches.push(current);
     batches.forEach((batch,idx)=>PLAN.push({rationType,idx:idx+1,sheds:batch.sheds,total:batch.total}));
   });
 
@@ -167,30 +142,55 @@ function generatePlan(){
     let html=`<h3>Mix ${batch.idx} - ${batch.rationType} - Total: ${Math.round(batch.total)} kg</h3>`;
     html+=`<table><tr><th>Shed</th><th>%</th><th>Headcount</th><th>Total (kg)</th><th>Remaining (kg)</th></tr>`;
     let remaining=batch.total;
-    batch.sheds.forEach(s=>{
-      remaining-=s.total;
-      html+=`<tr><td>${s.shed.Shed}</td><td>${s.percentStr}</td><td>${Math.round(s.shed.Headcount)}</td><td>${Math.round(s.total)}</td><td>${Math.round(remaining)}</td></tr>`;
-    });
+    batch.sheds.forEach(s=>{remaining-=s.total; html+=`<tr><td>${s.shed.Shed}</td><td>${s.percentStr}</td><td>${Math.round(s.shed.Headcount)}</td><td>${Math.round(s.total)}</td><td>${Math.round(remaining)}</td></tr>`;});
     html+=`</table>`;
 
-    const ingredientTotals={}; RATIONS.forEach(r=>{if(!/total/i.test(r.Ingredient)) ingredientTotals[r.Ingredient]=0;});
-    batch.sheds.forEach(s=>{RATIONS.forEach(r=>{if(/total/i.test(r.Ingredient)) return; const q=r[s.shed.Ration]; if(q!=null) ingredientTotals[r.Ingredient]+=q*s.percent*s.shed.Headcount;});});
+    const ingredientTotals={}; RATIONS.forEach(r=>{if(!/total/i.test(r.Ingredient))ingredientTotals[r.Ingredient]=0;});
+    batch.sheds.forEach(s=>{RATIONS.forEach(r=>{if(/total/i.test(r.Ingredient))return; const q=r[s.shed.Ration]; if(q!=null)ingredientTotals[r.Ingredient]+=q*s.percent*s.shed.Headcount;});});
 
     html+=`<table class="ingredient-table"><thead><tr>
-      <th>Ingredient</th><th>Qty (kg)</th><th>Cumulative Total (kg)</th>
+      <th></th><th>Ingredient</th><th>Qty (kg)</th><th>Cumulative Total (kg)</th>
     </tr></thead><tbody>`;
     let runningTotal=0;
-    Object.entries(ingredientTotals).forEach(([ing, qty])=>{
+    Object.entries(ingredientTotals).forEach(([ing,qty])=>{
       runningTotal+=qty;
-      html+=`<tr><td>${ing}</td><td>${Math.round(qty)}</td><td>${Math.round(runningTotal)}</td></tr>`;
+      html+=`<tr draggable="true"><td class="drag-handle">⋮⋮</td><td>${ing}</td><td>${Math.round(qty)}</td><td>${Math.round(runningTotal)}</td></tr>`;
     });
     html+=`</tbody></table>`;
     output.innerHTML+=html;
   });
 
-  // Make all ingredient tables draggable
   document.querySelectorAll(".ingredient-table").forEach(makeIngredientTableDraggable);
   document.getElementById("planOutput").scrollIntoView({behavior:"smooth"});
+}
+
+function makeIngredientTableDraggable(table){
+  const tbody=table.querySelector("tbody");
+  let dragSrcRow=null;
+  tbody.querySelectorAll("tr").forEach(row=>{
+    row.addEventListener("dragstart",e=>{dragSrcRow=row; e.dataTransfer.effectAllowed="move"; row.style.opacity="0.5";});
+    row.addEventListener("dragend",()=>{row.style.opacity="";});
+    row.addEventListener("dragover",e=>{e.preventDefault(); e.dataTransfer.dropEffect="move";});
+    row.addEventListener("drop",e=>{
+      e.stopPropagation();
+      if(dragSrcRow!==row){
+        const rows=Array.from(tbody.querySelectorAll("tr"));
+        const dragIndex=rows.indexOf(dragSrcRow);
+        const dropIndex=rows.indexOf(row);
+        if(dragIndex<dropIndex){tbody.insertBefore(dragSrcRow,row.nextSibling);}else{tbody.insertBefore(dragSrcRow,row);}
+        recalcCumulative(tbody);
+      }
+    });
+  });
+}
+
+function recalcCumulative(tbody){
+  let runningTotal=0;
+  tbody.querySelectorAll("tr").forEach(row=>{
+    const qty=parseFloat(row.children[2].textContent)||0;
+    runningTotal+=qty;
+    row.children[3].textContent=Math.round(runningTotal);
+  });
 }
 
 function printPlan(){window.print();}
@@ -199,19 +199,24 @@ function downloadPDF(){
   const {jsPDF}=window.jspdf; const doc=new jsPDF(); const dateStr=new Date().toISOString().slice(0,10);
   const img=new Image(); img.crossOrigin="Anonymous"; img.src="https://raw.githubusercontent.com/adamcwhall-coder/feeding-plan/main/0EC2FEE7-BD1C-4332-AAB4-AAD5FF7BD04A.png";
   img.onload=function(){
-    const pdfWidth=140; const pdfHeight=(img.height/img.width)*pdfWidth; doc.addImage(img,"JPEG",35,20,pdfWidth,pdfHeight);
-    let y=20+pdfHeight+15; doc.setFontSize(22); doc.text("New Blainslie Feeding Plan",105,y,{align:"center"});
-    y+=15; doc.setFontSize(14); doc.text(`Date: ${dateStr}`,105,y,{align:"center"}); y+=15; doc.text(`Total Headcount: ${TOTAL_HEADCOUNT}`,105,y,{align:"center"}); y+=10; doc.text(`Max Batch Weight: ${MAX_BATCH} kg`,105,y,{align:"center"});
-
+    const pdfWidth=140; const pdfHeight=(img.height/img.width)*pdfWidth;
+    doc.addImage(img,"JPEG",35,20,pdfWidth,pdfHeight);
+    let y=20+pdfHeight+15; doc.setFontSize(22);
+    doc.text("New Blainslie Feeding Plan",105,y,{align:"center"});
+    y+=15; doc.setFontSize(14);
+    doc.text(`Date: ${dateStr}`,105,y,{align:"center"});
+    y+=15; doc.text(`Total Headcount: ${TOTAL_HEADCOUNT}`,105,y,{align:"center"});
+    y+=10; doc.text(`Max Batch Weight: ${MAX_BATCH} kg`,105,y,{align:"center"});
     PLAN.forEach(batch=>{
-      doc.addPage(); doc.setFontSize(14); doc.text(`Mix ${batch.idx} - ${batch.rationType} - Total: ${Math.round(batch.total)} kg`,14,20);
-      let shedRows=[], remaining=batch.total;
-      batch.sheds.forEach(s=>{ remaining-=s.total; shedRows.push([s.shed.Shed,s.percentStr,Math.round(s.shed.Headcount),Math.round(s.total),Math.round(remaining)]); });
+      doc.addPage(); doc.setFontSize(14);
+      doc.text(`Mix ${batch.idx} - ${batch.rationType} - Total: ${Math.round(batch.total)} kg`,14,20);
+      let shedRows=[]; let remaining=batch.total;
+      batch.sheds.forEach(s=>{remaining-=s.total; shedRows.push([s.shed.Shed,s.percentStr,Math.round(s.shed.Headcount),Math.round(s.total),Math.round(remaining)]);});
       doc.autoTable({startY:30,head:[["Shed","%","Headcount","Total (kg)","Remaining (kg)"]],body:shedRows,theme:"striped",headStyles:{fillColor:[42,110,187],halign:"center"},styles:{halign:"center"}});
-      const ingredientTotals={}; RATIONS.forEach(r=>{if(!/total/i.test(r.Ingredient)) ingredientTotals[r.Ingredient]=0;});
-      batch.sheds.forEach(s=>{RATIONS.forEach(r=>{if(/total/i.test(r.Ingredient)) return; const q=r[s.shed.Ration]; if(q!=null) ingredientTotals[r.Ingredient]+=q*s.percent*s.shed.Headcount;});});
-      let runningTotal=0, ingredientRows=[];
-      Object.entries(ingredientTotals).forEach(([ing,qty])=>{ runningTotal+=qty; ingredientRows.push([ing,Math.round(qty),Math.round(runningTotal)]); });
+      const ingredientTotals={}; RATIONS.forEach(r=>{if(!/total/i.test(r.Ingredient))ingredientTotals[r.Ingredient]=0;});
+      batch.sheds.forEach(s=>{RATIONS.forEach(r=>{if(/total/i.test(r.Ingredient))return; const q=r[s.shed.Ration]; if(q!=null)ingredientTotals[r.Ingredient]+=q*s.percent*s.shed.Headcount;});});
+      let runningTotal=0; const ingredientRows=[];
+      Object.entries(ingredientTotals).forEach(([ing,qty])=>{runningTotal+=qty; ingredientRows.push([ing,Math.round(qty),Math.round(runningTotal)]);});
       doc.autoTable({startY:doc.lastAutoTable.finalY+10,head:[["Ingredient","Batch Qty (kg)","Cumulative Total (kg)"]],body:ingredientRows,theme:"grid",headStyles:{fillColor:[42,110,187],halign:"center"},styles:{halign:"center"}});
     });
     doc.save(`feeding_plan_${dateStr}.pdf`);
