@@ -151,9 +151,9 @@ function generatePlan(){
     let html=`<h3>Mix ${batch.idx} - ${batch.rationType} - Total: ${Math.round(batch.total)} kg</h3>`;
     html+=`<table><tr><th>Shed</th><th>%</th><th>Headcount</th><th>Total (kg)</th><th>Remaining (kg)</th></tr>`;
     let remaining = batch.total;
-    batch.sheds.forEach(s=>{
+    batch.sheds.forEach((s,i)=>{
+      remaining -= s.total; // subtract current shed first
       html+=`<tr><td>${s.shed.Shed}</td><td>${s.percentStr}</td><td>${Math.round(s.shed.Headcount)}</td><td>${Math.round(s.total)}</td><td>${Math.round(remaining)}</td></tr>`;
-      remaining -= s.total;
     });
     html+=`</table>`;
 
@@ -180,14 +180,12 @@ function downloadPDF(){
 
     PLAN.forEach(batch=>{
       doc.addPage(); doc.setFontSize(14); doc.text(`Mix ${batch.idx} - ${batch.rationType} - Total: ${Math.round(batch.total)} kg`,14,20);
-      // Shed table with remaining
       let shedRows=[]; let remaining=batch.total;
       batch.sheds.forEach(s=>{
+        remaining -= s.total; // subtract current shed first
         shedRows.push([s.shed.Shed,s.percentStr,Math.round(s.shed.Headcount),Math.round(s.total),Math.round(remaining)]);
-        remaining-=s.total;
       });
       doc.autoTable({startY:30,head:[["Shed","%","Headcount","Total (kg)","Remaining (kg)"]],body:shedRows,theme:"striped",headStyles:{fillColor:[42,110,187],halign:"center"},styles:{halign:"center"}});
-      // Ingredient table
       const ingredientTotals={}; RATIONS.forEach(r=>{if(!/total/i.test(r.Ingredient)) ingredientTotals[r.Ingredient]=0;});
       batch.sheds.forEach(s=>{RATIONS.forEach(r=>{if(/total/i.test(r.Ingredient)) return; const q=r[s.shed.Ration]; if(q!=null) ingredientTotals[r.Ingredient]+=q*s.percent*s.shed.Headcount;});});
       let runningTotal=0; const ingredientRows=[];
