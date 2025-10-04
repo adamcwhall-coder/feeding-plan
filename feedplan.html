@@ -91,15 +91,11 @@ async function fetchYesterdays() {
       const row = data.find(r => r[0] === s.Shed);
       let val = 0;
       if (row && row[1] && row[1] !== "No Data") {
-        let raw = row[1];
-        if (typeof raw === "string") {
-          raw = raw.replace("%", "").trim();
-          val = parseFloat(raw);
-        } else val = parseFloat(raw);
-        if (val > 0 && val < 1) val *= 100;
-        if (val === 1) val = 100;
+        val = parseFloat(row[1]);
+        if (isNaN(val)) val = 0;
+        if (val > 0 && val < 1) val = val * 100; // Convert fraction to %
       }
-      yesterdays[s.Shed] = isNaN(val) ? "0" : val.toFixed(0);
+      yesterdays[s.Shed] = val.toFixed(0);
     });
     return yesterdays;
   } catch (e) {
