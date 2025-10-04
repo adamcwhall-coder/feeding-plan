@@ -223,55 +223,48 @@ function recalcCumulative(tbody, qtyIndex, cumulativeIndex){
 
 // PRINT / PDF
 function printPlan(){ window.print(); }
+
 function downloadPDF(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const dateStr = new Date().toISOString().slice(0,10);
 
-  // First page header
-  doc.setFontSize(22); 
+  // Add main title/date/headcount once
+  doc.setFontSize(22);
   doc.text("New Blainslie Feeding Plan", 105, 20, { align: "center" });
   doc.setFontSize(14);
   doc.text(`Date: ${dateStr}`, 105, 30, { align: "center" });
   doc.text(`Total Headcount: ${TOTAL_HEADCOUNT}`, 105, 40, { align: "center" });
 
-  const shedTables = document.querySelectorAll(".shed-table");
-  const ingredientTables = document.querySelectorAll(".ingredient-table");
+  // Only select actual batch tables
+  const shedTables = document.querySelectorAll("#planOutput .shed-table");
+  const ingredientTables = document.querySelectorAll("#planOutput .ingredient-table");
 
   shedTables.forEach((sTable, i) => {
     const iTable = ingredientTables[i];
     const shedRows = [...sTable.querySelectorAll("tr")];
     const ingRows = [...iTable.querySelectorAll("tr")];
 
-    if (i > 0) doc.addPage(); // new page after first mix
+    if(i > 0) doc.addPage(); // new page after first mix
 
-    // Show total batch weight for this mix
     let totalBatch = 0;
     shedRows.forEach(r => { totalBatch += parseFloat(r.children[4].textContent) || 0; });
     doc.setFontSize(14);
     doc.text(`Mix ${i + 1} - Total: ${Math.round(totalBatch)} kg`, 14, 20);
 
-    // Shed table
     doc.autoTable({
       startY: 30,
       head: [["Shed","%","Headcount","Total (kg)","Remaining (kg)"]],
-      body: shedRows.map(r => {
-        const cells = [...r.children];
-        return [cells[1].textContent, cells[2].textContent, cells[3].textContent, cells[4].textContent, cells[5].textContent];
-      }),
+      body: shedRows.map(r => { const cells = [...r.children]; return [cells[1].textContent, cells[2].textContent, cells[3].textContent, cells[4].textContent, cells[5].textContent]; }),
       theme: "striped",
       headStyles: { fillColor: [42,110,187], halign: "center" },
       styles: { halign: "center" }
     });
 
-    // Ingredient table
     doc.autoTable({
       startY: doc.lastAutoTable.finalY + 10,
       head: [["Ingredient","Qty (kg)","Cumulative Total (kg)"]],
-      body: ingRows.map(r => {
-        const cells = [...r.children];
-        return [cells[1].textContent, cells[2].textContent, cells[3].textContent];
-      }),
+      body: ingRows.map(r => { const cells = [...r.children]; return [cells[1].textContent, cells[2].textContent, cells[3].textContent]; }),
       theme: "grid",
       headStyles: { fillColor: [42,110,187], halign: "center" },
       styles: { halign: "center" }
