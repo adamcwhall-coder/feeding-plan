@@ -57,7 +57,7 @@ button:hover { opacity: 0.85; }
 </div>
 
 <script>
-const MAX_BATCH = 2400;
+let MAX_BATCH = 2600; // default max batch weight
 const RATIONS_URL = "https://script.google.com/macros/s/AKfycbz7xmhtWaSwMcKVqZuuSo1eIAGOTKjThMYuDxyzKi3CNZ-uK8qAd_4ojJkVk8o0iwk/exec";
 const YESTERDAY_URL = "https://script.google.com/macros/s/AKfycbydhGdSJ52UomMLIP1GtxyVQe2dflny8PUIC5lfv0vIiqDis_AorTZr_MsbYWaPfCCI/exec";
 const SHEDS_URL = "https://script.google.com/macros/s/AKfycbwgA3g-Ps70NR3oBcgv11PU9wPwWg2Q5J_QHVF-aZ_Ix6G6rvOkGoYtYh1gZsL0Ed1K/exec";
@@ -76,17 +76,6 @@ async function fetchSheds() {
   catch (e) { console.error("Error fetching sheds:", e); SHEDS = []; }
 }
 
-/*
- Improved detection for yesterday's percentage values:
- - Accepts numbers, strings like "105%", "1.05", "0.87", "105"
- - Heuristics:
-   * If value is a string containing "%", strip and use as percent.
-   * If numeric and 0 < val < 1  => treat as fraction (0.87 -> 87).
-   * If numeric and val === 1      => treat as 100.
-   * If numeric and 1 < val < 100 and val has fractional part (e.g. 1.05) => treat as decimal percent (1.05 -> 105).
-   * If numeric and val >= 100     => keep as-is (already percent integer).
-   * Otherwise keep as-is (e.g., 50 stays 50).
-*/
 async function fetchYesterdays() {
   try {
     const data = await (await fetch(YESTERDAY_URL + "?cacheBust=" + Date.now())).json();
@@ -94,54 +83,13 @@ async function fetchYesterdays() {
     SHEDS.forEach(s => {
       const row = data.find(r => r[0] === s.Shed);
       let display = "0";
-
-      if (!row || row[1] === "No Data" || row[1] == null || row[1] === "") {
-        display = "0";
-      } else {
-        const raw = row[1];
-        let val = 0;
-        let rawIsString = false;
-        let rawHasPercent = false;
-
-        if (typeof raw === 'string') {
-          rawIsString = true;
-          rawHasPercent = raw.indexOf('%') !== -1;
-          const cleaned = raw.replace(/,/g, '').replace('%', '').trim();
-          val = parseFloat(cleaned);
-          if (isNaN(val)) val = 0;
-        } else if (typeof raw === 'number') {
-          val = raw;
-        } else {
-          val = 0;
-        }
-
-        // Decide how to interpret val
-        if (val === 0) {
-          display = "0";
-        } else if (rawIsString && rawHasPercent) {
-          // "105%" -> 105
-          display = Math.round(val).toString();
-        } else {
-          // numeric or string without % sign
-          if (val > 0 && val < 1) {
-            // 0.87 -> 87
-            val = val * 100;
-          } else if (val >= 1 && val < 100) {
-            // This range is ambiguous:
-            // - If it's exactly 1 -> treat as 100
-            // - If it has a fractional part (e.g. 1.05) -> treat as decimal percent -> 105
-            // - Otherwise assume it's already a percentage (e.g. 50 -> 50)
-            if (val === 1 || (val < 10 && (val % 1 !== 0))) {
-              val = val * 100;
-            }
-          }
-          display = Math.round(val).toString();
-        }
-
-        // helpful debug in console if you want to inspect raw -> display mapping
-        // console.log(`YESTERDAY: shed=${s.Shed} raw=${JSON.stringify(raw)} -> display=${display}`);
+      if (!row || !row[1] || row[1] === "No Data") display = "0";
+      else {
+        let val = parseFloat(String(row[1]).replace(/[%]/g, ""));
+        if (isNaN(val)) val = 0;
+        if (val > 0 && val < 1) val *= 100;
+        display = Math.round(val).toString();
       }
-
       yesterdays[s.Shed] = display;
     });
     return yesterdays;
@@ -169,16 +117,28 @@ async function initInputs() {
   TOTAL_HEADCOUNT = SHEDS.reduce((sum, s) => sum + (s.Headcount || 0), 0);
   document.getElementById("totalHeadcount").textContent = `Total Headcount: ${TOTAL_HEADCOUNT}`;
   const container = document.getElementById("inputs");
-  container.innerHTML = "<table><thead><tr><th>Shed</th><th>% of Target</th></tr></thead><tbody>" +
-    SHEDS.map((s,i)=>{
-      const placeholder = yesterdays[s.Shed] || 0;
-      return `<tr><td>${s.Shed}</td><td><input type="number" id="shed${i}" placeholder="${placeholder}"></td></tr>`;
-    }).join('') +
-    "</tbody></table>";
+
+  container.innerHTML = `
+    <table>
+      <thead><tr><th>Shed</th><th>% of Target</th></tr></thead>
+      <tbody>
+        ${SHEDS.map((s,i)=>{
+          const placeholder = yesterdays[s.Shed] || 0;
+          return `<tr><td>${s.Shed}</td><td><input type="number" id="shed${i}" placeholder="${placeholder}"></td></tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    <div style="text-align:center; margin:15px 0;">
+      <label for="maxBatch" style="font-weight:bold;">Max Batch Weight (kg): </label>
+      <input type="number" id="maxBatch" value="${MAX_BATCH}" min="100" step="50" style="width:120px; text-align:center;">
+    </div>
+  `;
   showLoading(false);
 }
 
 function generatePlan() {
+  MAX_BATCH = parseFloat(document.getElementById("maxBatch").value) || 2600;
+
   const percentages = SHEDS.map((s,i)=>{
     const el = document.getElementById("shed"+i);
     let val = (el && el.value) ? el.value.trim() : "";
@@ -211,7 +171,9 @@ function generatePlan() {
   output.style.display = "block";
   output.innerHTML = `<button id="printBtn" onclick="printPlan()">Print</button>
                       <button id="pdfBtn" onclick="downloadPDF()">Download PDF</button>
-                      <h2>Date: ${new Date().toISOString().slice(0,10)}</h2>`;
+                      <h2>Date: ${new Date().toISOString().slice(0,10)}</h2>
+                      <h3>Max Batch Weight: ${MAX_BATCH} kg</h3>`;
+
   PLAN.forEach(batch=>{
     let html = `<h3>Mix ${batch.idx} - ${batch.rationType} - Total: ${Math.round(batch.total)} kg</h3>`;
     html += `<table><tr><th>Shed</th><th>%</th><th>Headcount</th><th>Total (kg)</th></tr>`;
@@ -219,6 +181,7 @@ function generatePlan() {
       html += `<tr><td>${s.shed.Shed}</td><td>${s.percentStr}</td><td>${Math.round(s.shed.Headcount)}</td><td>${Math.round(s.total)}</td></tr>`;
     });
     html += `</table>`;
+
     const ingredientTotals = {};
     RATIONS.forEach(r=>{ if(!/total/i.test(r.Ingredient)) ingredientTotals[r.Ingredient]=0; });
     batch.sheds.forEach(s=>{
@@ -263,6 +226,8 @@ function downloadPDF() {
     doc.text(`Date: ${dateStr}`, 105, y, { align: "center" });
     y += 15;
     doc.text(`Total Headcount: ${TOTAL_HEADCOUNT}`, 105, y, { align: "center" });
+    y += 10;
+    doc.text(`Max Batch Weight: ${MAX_BATCH} kg`, 105, y, { align: "center" });
 
     PLAN.forEach((batch, idx)=>{
       doc.addPage();
