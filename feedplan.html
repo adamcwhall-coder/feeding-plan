@@ -67,21 +67,28 @@ let RATIONS = [], SHEDS = [], PLAN = [], TOTAL_HEADCOUNT = 0;
 function showLoading(show){document.getElementById("loading").style.display=show?"block":"none";}
 async function fetchRations(){try{RATIONS=await(await fetch(RATIONS_URL+"?cacheBust="+Date.now())).json();}catch(e){RATIONS=[];}}
 async function fetchSheds(){try{SHEDS=await(await fetch(SHEDS_URL+"?cacheBust="+Date.now())).json();}catch(e){SHEDS=[];}}
+
+// ORIGINAL PERCENTAGE LOGIC
 async function fetchYesterdays(){
   try{
     const data = await (await fetch(YESTERDAY_URL+"?cacheBust="+Date.now())).json();
     const yesterdays = {};
     SHEDS.forEach(s=>{
-      const row=data.find(r=>r[0]===s.Shed);
-      let display="0";
-      if(!row||!row[1]||row[1]==="No Data"){ display="0"; }
+      const row = data.find(r => r[0]===s.Shed);
+      let display = "0";
+      if(!row || !row[1] || row[1]==="No Data"){ display="0"; }
       else{
-        const raw=row[1];
-        let val=typeof raw==="string"?parseFloat(raw.replace(/[%]/g,"")):raw;
-        if(isNaN(val)) val=0;
-        if(val>0&&val<1) val*=100;
-        if(val===1) val=100;
-        display=Math.round(val).toString();
+        const raw = row[1];
+        let val = 0, rawIsString=false, rawHasPercent=false;
+        if(typeof raw==="string"){ rawIsString=true; rawHasPercent=raw.indexOf('%')!==-1; val=parseFloat(raw.replace(/,/g,'').replace('%','').trim()); if(isNaN(val)) val=0;}
+        else if(typeof raw==="number"){ val=raw; } else val=0;
+        if(val===0){ display="0"; }
+        else if(rawIsString && rawHasPercent){ display=Math.round(val).toString(); }
+        else{
+          if(val>0 && val<1) val*=100;
+          else if(val>=1 && val<100){ if(val===1 || (val<10 && val%1!==0)) val*=100; }
+          display=Math.round(val).toString();
+        }
       }
       yesterdays[s.Shed]=display;
     });
@@ -207,10 +214,7 @@ function recalcCumulative(tbody, qtyIndex, cumulativeIndex){
     let total=0;
     tbody.querySelectorAll("tr").forEach(r=>{ total+=parseFloat(r.children[qtyIndex].textContent)||0; });
     let remaining=total;
-    tbody.querySelectorAll("tr").forEach(r=>{
-      remaining-=parseFloat(r.children[qtyIndex].textContent)||0;
-      r.children[cumulativeIndex].textContent=Math.max(Math.round(remaining),0);
-    });
+    tbody.querySelectorAll("tr").forEach(r=>{ remaining-=parseFloat(r.children[qtyIndex].textContent)||0; r.children[cumulativeIndex].textContent=Math.max(Math.round(remaining),0); });
   } else {
     let cumulative=0;
     tbody.querySelectorAll("tr").forEach(r=>{ cumulative+=parseFloat(r.children[qtyIndex].textContent)||0; r.children[cumulativeIndex].textContent=Math.round(cumulative); });
@@ -231,6 +235,7 @@ function downloadPDF(){
     doc.addPage();
     doc.setFontSize(14);
     doc.text(`Mix ${batch.idx} - ${batch.rationType} - Total: ${Math.round(batch.total)} kg`,14,20);
+
     doc.autoTable({
       startY:30,
       head:[["Shed","%","Headcount","Total (kg)","Remaining (kg)"]],
