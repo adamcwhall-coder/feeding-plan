@@ -186,88 +186,67 @@ function makeDraggable(table, qtyIndex, cumulativeIndex){
     handle.addEventListener("dragstart",()=>{dragRow=row; row.style.opacity="0.5";});
     handle.addEventListener("dragend",()=>{row.style.opacity=""; dragRow=null;});
 
-    handle.addEventListener("touchstart",e=>{dragRow=row; row.style.opacity="0.5";});
-    handle.addEventListener("touchmove",e=>{
-      if(!dragRow) return; e.preventDefault();
-      const y=e.touches[0].clientY;
-      const rows=[...tbody.querySelectorAll("tr")];
-      const over=rows.find(r=>{const rect=r.getBoundingClientRect(); return y>rect.top && y<rect.bottom;});
-      if(over && over!==dragRow){ if(y<over.getBoundingClientRect().top+over.offsetHeight/2) tbody.insertBefore(dragRow,over); else tbody.insertBefore(dragRow,over.nextSibling);}
+    handle.addEventListener("dragover",e=>{e.preventDefault();});
+    handle.addEventListener("drop",()=>{if(!dragRow||dragRow===row) return;
+      tbody.insertBefore(dragRow,row.nextSibling);
+      if(table.classList.contains("ingredient-table")){
+        let cum=0;
+        tbody.querySelectorAll("tr").forEach(r=>{ const val=parseFloat(r.children[qtyIndex].textContent)||0; cum+=val; r.children[cumulativeIndex].textContent=Math.round(cum); });
+      } else if(table.classList.contains("shed-table")){
+        let remaining=0;
+        tbody.querySelectorAll("tr").forEach(r=>{remaining+=parseFloat(r.children[qtyIndex].textContent)||0;});
+        tbody.querySelectorAll("tr").forEach(r=>{remaining-=parseFloat(r.children[qtyIndex].textContent)||0; r.children[cumulativeIndex].textContent=Math.max(Math.round(remaining),0);});
+      }
     });
-    handle.addEventListener("touchend",()=>{ if(dragRow){dragRow.style.opacity=""; dragRow=null; recalcCumulative(tbody,qtyIndex,cumulativeIndex);} });
-  });
-
-  tbody.addEventListener("dragover",e=>e.preventDefault());
-  tbody.addEventListener("drop",e=>{
-    e.preventDefault();
-    const target=e.target.closest("tr");
-    if(dragRow && target && dragRow!==target){
-      const rows=[...tbody.querySelectorAll("tr")]; const dragIndex=rows.indexOf(dragRow); const dropIndex=rows.indexOf(target);
-      if(dragIndex<dropIndex) tbody.insertBefore(dragRow,target.nextSibling); else tbody.insertBefore(dragRow,target);
-      recalcCumulative(tbody,qtyIndex,cumulativeIndex);
-    }
   });
 }
 
-function recalcCumulative(tbody, qtyIndex, cumulativeIndex){
-  if(tbody.classList.contains("shed-table")){
-    let total=0;
-    tbody.querySelectorAll("tr").forEach(r=>{ total+=parseFloat(r.children[qtyIndex].textContent)||0; });
-    let remaining=total;
-    tbody.querySelectorAll("tr").forEach(r=>{ remaining-=parseFloat(r.children[qtyIndex].textContent)||0; r.children[cumulativeIndex].textContent=Math.max(Math.round(remaining),0); });
-  } else {
-    let cumulative=0;
-    tbody.querySelectorAll("tr").forEach(r=>{ cumulative+=parseFloat(r.children[qtyIndex].textContent)||0; r.children[cumulativeIndex].textContent=Math.round(cumulative); });
-  }
-}
+// PRINT
+function printPlan(){window.print();}
 
-// PRINT / PDF
-function printPlan(){ window.print(); }
-
+// DOWNLOAD PDF (FIXED)
 function downloadPDF(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const dateStr = new Date().toISOString().slice(0,10);
 
-  // Add main title/date/headcount once
   doc.setFontSize(22);
   doc.text("New Blainslie Feeding Plan", 105, 20, { align: "center" });
   doc.setFontSize(14);
   doc.text(`Date: ${dateStr}`, 105, 30, { align: "center" });
   doc.text(`Total Headcount: ${TOTAL_HEADCOUNT}`, 105, 40, { align: "center" });
 
-  // Only select actual batch tables
   const shedTables = document.querySelectorAll("#planOutput .shed-table");
   const ingredientTables = document.querySelectorAll("#planOutput .ingredient-table");
 
   shedTables.forEach((sTable, i) => {
     const iTable = ingredientTables[i];
-    const shedRows = [...sTable.querySelectorAll("tr")];
-    const ingRows = [...iTable.querySelectorAll("tr")];
+    const shedRows = [...sTable.querySelectorAll("tbody tr")];
+    const ingRows = [...iTable.querySelectorAll("tbody tr")];
 
-    if(i > 0) doc.addPage(); // new page after first mix
+    if(i>0) doc.addPage();
 
-    let totalBatch = 0;
-    shedRows.forEach(r => { totalBatch += parseFloat(r.children[4].textContent) || 0; });
+    let totalBatch=0;
+    shedRows.forEach(r=>{ totalBatch+=parseFloat(r.children[4].textContent)||0; });
     doc.setFontSize(14);
-    doc.text(`Mix ${i + 1} - Total: ${Math.round(totalBatch)} kg`, 14, 20);
+    doc.text(`Mix ${i+1} - Total: ${Math.round(totalBatch)} kg`, 14, 20);
 
     doc.autoTable({
-      startY: 30,
-      head: [["Shed","%","Headcount","Total (kg)","Remaining (kg)"]],
-      body: shedRows.map(r => { const cells = [...r.children]; return [cells[1].textContent, cells[2].textContent, cells[3].textContent, cells[4].textContent, cells[5].textContent]; }),
-      theme: "striped",
-      headStyles: { fillColor: [42,110,187], halign: "center" },
-      styles: { halign: "center" }
+      startY:30,
+      head:[["Shed","%","Headcount","Total (kg)","Remaining (kg)"]],
+      body:shedRows.map(r=>[...r.children].slice(1,6).map(c=>c.textContent)),
+      theme:"striped",
+      headStyles:{fillColor:[42,110,187],halign:"center"},
+      styles:{halign:"center"}
     });
 
     doc.autoTable({
-      startY: doc.lastAutoTable.finalY + 10,
-      head: [["Ingredient","Qty (kg)","Cumulative Total (kg)"]],
-      body: ingRows.map(r => { const cells = [...r.children]; return [cells[1].textContent, cells[2].textContent, cells[3].textContent]; }),
-      theme: "grid",
-      headStyles: { fillColor: [42,110,187], halign: "center" },
-      styles: { halign: "center" }
+      startY:doc.lastAutoTable.finalY+10,
+      head:[["Ingredient","Qty (kg)","Cumulative Total (kg)"]],
+      body:ingRows.map(r=>[...r.children].slice(1,4).map(c=>c.textContent)),
+      theme:"grid",
+      headStyles:{fillColor:[42,110,187],halign:"center"},
+      styles:{halign:"center"}
     });
   });
 
