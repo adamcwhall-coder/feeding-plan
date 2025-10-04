@@ -76,6 +76,7 @@ async function fetchSheds() {
   catch (e) { console.error("Error fetching sheds:", e); SHEDS = []; }
 }
 
+// Original robust percentage detection restored
 async function fetchYesterdays() {
   try {
     const data = await (await fetch(YESTERDAY_URL + "?cacheBust=" + Date.now())).json();
@@ -83,13 +84,43 @@ async function fetchYesterdays() {
     SHEDS.forEach(s => {
       const row = data.find(r => r[0] === s.Shed);
       let display = "0";
-      if (!row || !row[1] || row[1] === "No Data") display = "0";
-      else {
-        let val = parseFloat(String(row[1]).replace(/[%]/g, ""));
-        if (isNaN(val)) val = 0;
-        if (val > 0 && val < 1) val *= 100;
-        display = Math.round(val).toString();
+
+      if (!row || row[1] === "No Data" || row[1] == null || row[1] === "") {
+        display = "0";
+      } else {
+        const raw = row[1];
+        let val = 0;
+        let rawIsString = false;
+        let rawHasPercent = false;
+
+        if (typeof raw === 'string') {
+          rawIsString = true;
+          rawHasPercent = raw.indexOf('%') !== -1;
+          const cleaned = raw.replace(/,/g, '').replace('%', '').trim();
+          val = parseFloat(cleaned);
+          if (isNaN(val)) val = 0;
+        } else if (typeof raw === 'number') {
+          val = raw;
+        } else {
+          val = 0;
+        }
+
+        if (val === 0) {
+          display = "0";
+        } else if (rawIsString && rawHasPercent) {
+          display = Math.round(val).toString();
+        } else {
+          if (val > 0 && val < 1) {
+            val = val * 100;
+          } else if (val >= 1 && val < 100) {
+            if (val === 1 || (val < 10 && (val % 1 !== 0))) {
+              val = val * 100;
+            }
+          }
+          display = Math.round(val).toString();
+        }
       }
+
       yesterdays[s.Shed] = display;
     });
     return yesterdays;
