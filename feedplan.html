@@ -221,7 +221,7 @@ function recalcCumulative(tbody, qtyIndex, cumulativeIndex){
   }
 }
 
-// PDF / PRINT
+// PRINT / PDF
 function printPlan(){ window.print(); }
 function downloadPDF(){
   const { jsPDF } = window.jspdf;
@@ -231,34 +231,43 @@ function downloadPDF(){
   doc.setFontSize(14); doc.text(`Date: ${dateStr}`,105,30,{align:"center"});
   doc.text(`Total Headcount: ${TOTAL_HEADCOUNT}`,105,40,{align:"center"});
 
-  PLAN.forEach(batch=>{
+  const shedTables = document.querySelectorAll(".shed-table");
+  const ingredientTables = document.querySelectorAll(".ingredient-table");
+  for(let i=0;i<shedTables.length;i++){
+    const sTable=shedTables[i], iTable=ingredientTables[i];
+    const shedRows=[...sTable.querySelectorAll("tr")];
+    const ingRows=[...iTable.querySelectorAll("tr")];
+
     doc.addPage();
     doc.setFontSize(14);
-    doc.text(`Mix ${batch.idx} - ${batch.rationType} - Total: ${Math.round(batch.total)} kg`,14,20);
+    // Show correct total batch weight
+    let totalBatch=0; shedRows.forEach(r=>{ totalBatch+=parseFloat(r.children[4].textContent)||0; });
+    doc.text(`Mix ${i+1} - Total: ${Math.round(totalBatch)} kg`,14,20);
 
     doc.autoTable({
       startY:30,
       head:[["Shed","%","Headcount","Total (kg)","Remaining (kg)"]],
-      body:batch.sheds.map(s=>[s.shed.Shed,s.percentStr,Math.round(s.shed.Headcount),Math.round(s.total),Math.max(0,Math.round(batch.total-s.total))]),
+      body:shedRows.map(r=>{
+        const cells=[...r.children];
+        return [cells[1].textContent,cells[2].textContent,cells[3].textContent,cells[4].textContent,cells[5].textContent];
+      }),
       theme:"striped",
       headStyles:{fillColor:[42,110,187],halign:"center"},
       styles:{halign:"center"}
     });
 
-    const ingredientTotals={};
-    RATIONS.forEach(r=>{if(!/total/i.test(r.Ingredient)) ingredientTotals[r.Ingredient]=0;});
-    batch.sheds.forEach(s=>{ RATIONS.forEach(r=>{if(/total/i.test(r.Ingredient)) return; const q=r[s.shed.Ration]; if(q!=null) ingredientTotals[r.Ingredient]+=q*s.percent*s.shed.Headcount; }); });
-
-    let cumulative=0;
     doc.autoTable({
       startY: doc.lastAutoTable.finalY+10,
       head:[["Ingredient","Qty (kg)","Cumulative Total (kg)"]],
-      body:Object.entries(ingredientTotals).map(([ing,qty])=>{ cumulative+=qty; return [ing,Math.round(qty),Math.round(cumulative)]; }),
+      body: ingRows.map(r=>{
+        const cells=[...r.children];
+        return [cells[1].textContent,cells[2].textContent,cells[3].textContent];
+      }),
       theme:"grid",
       headStyles:{fillColor:[42,110,187],halign:"center"},
       styles:{halign:"center"}
     });
-  });
+  }
 
   doc.save(`feeding_plan_${dateStr}.pdf`);
 }
