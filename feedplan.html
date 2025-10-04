@@ -76,7 +76,7 @@ async function fetchSheds() {
   catch (e) { console.error("Error fetching sheds:", e); SHEDS = []; }
 }
 
-// Original robust percentage detection restored
+// Restored original percentage logic
 async function fetchYesterdays() {
   try {
     const data = await (await fetch(YESTERDAY_URL + "?cacheBust=" + Date.now())).json();
@@ -84,43 +84,15 @@ async function fetchYesterdays() {
     SHEDS.forEach(s => {
       const row = data.find(r => r[0] === s.Shed);
       let display = "0";
-
       if (!row || row[1] === "No Data" || row[1] == null || row[1] === "") {
         display = "0";
       } else {
         const raw = row[1];
-        let val = 0;
-        let rawIsString = false;
-        let rawHasPercent = false;
-
-        if (typeof raw === 'string') {
-          rawIsString = true;
-          rawHasPercent = raw.indexOf('%') !== -1;
-          const cleaned = raw.replace(/,/g, '').replace('%', '').trim();
-          val = parseFloat(cleaned);
-          if (isNaN(val)) val = 0;
-        } else if (typeof raw === 'number') {
-          val = raw;
-        } else {
-          val = 0;
-        }
-
-        if (val === 0) {
-          display = "0";
-        } else if (rawIsString && rawHasPercent) {
-          display = Math.round(val).toString();
-        } else {
-          if (val > 0 && val < 1) {
-            val = val * 100;
-          } else if (val >= 1 && val < 100) {
-            if (val === 1 || (val < 10 && (val % 1 !== 0))) {
-              val = val * 100;
-            }
-          }
-          display = Math.round(val).toString();
-        }
+        let val = parseFloat((raw + "").replace("%","").trim());
+        if (isNaN(val)) val = 0;
+        if (val > 0 && val < 1) val *= 100;
+        display = Math.round(val).toString();
       }
-
       yesterdays[s.Shed] = display;
     });
     return yesterdays;
@@ -222,9 +194,12 @@ function generatePlan() {
         if (q != null) ingredientTotals[r.Ingredient] += q * s.percent * s.shed.Headcount;
       });
     });
-    html += `<table><tr><th>Ingredient</th><th>Quantity (kg)</th></tr>`;
+
+    html += `<table><tr><th>Ingredient</th><th>Quantity (kg)</th><th>Cumulative Total (kg)</th></tr>`;
+    let runningTotal = 0;
     Object.entries(ingredientTotals).forEach(([ing,qty])=>{
-      html += `<tr><td>${ing}</td><td>${Math.round(qty)}</td></tr>`;
+      runningTotal += qty;
+      html += `<tr><td>${ing}</td><td>${Math.round(qty)}</td><td>${Math.round(runningTotal)}</td></tr>`;
     });
     html += `</table>`;
     output.innerHTML += html;
@@ -239,7 +214,6 @@ function downloadPDF() {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const dateStr = new Date().toISOString().slice(0,10);
-
   const img = new Image();
   img.crossOrigin = "Anonymous";
   img.src = "https://raw.githubusercontent.com/adamcwhall-coder/feeding-plan/main/0EC2FEE7-BD1C-4332-AAB4-AAD5FF7BD04A.png";
@@ -274,6 +248,7 @@ function downloadPDF() {
         styles: { halign:"center" }
       });
 
+      // Per-mix ingredient totals and running totals within the mix
       const ingredientTotals = {};
       RATIONS.forEach(r=>{ if(!/total/i.test(r.Ingredient)) ingredientTotals[r.Ingredient]=0; });
       batch.sheds.forEach(s=>{
@@ -284,10 +259,16 @@ function downloadPDF() {
         });
       });
 
+      let runningTotal = 0;
+      const ingredientRows = Object.entries(ingredientTotals).map(([ing,qty])=>{
+        runningTotal += qty;
+        return [ing, Math.round(qty), Math.round(runningTotal)];
+      });
+
       doc.autoTable({
         startY: doc.lastAutoTable.finalY + 10,
-        head: [["Ingredient","Quantity (kg)"]],
-        body: Object.entries(ingredientTotals).map(([ing,qty])=>[ing,Math.round(qty)]),
+        head: [["Ingredient","Batch Qty (kg)","Cumulative Total (kg)"]],
+        body: ingredientRows,
         theme: "grid",
         headStyles: { fillColor:[42,110,187], halign:"center" },
         styles: { halign:"center" }
