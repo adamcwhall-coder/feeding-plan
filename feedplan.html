@@ -83,19 +83,67 @@ async function fetchSheds() {
   catch (e) { console.error("Error fetching sheds:", e); SHEDS = []; }
 }
 
+/*
+ Robust detection for yesterday's percentage values:
+ - Handles "105%", "105", 1.05, 0.87, and numeric types returned by Sheets.
+ - Keeps whole percentages (>=100) as-is, converts fractions (0.87 -> 87),
+   and treats 1.05 as 105 (decimal percent).
+*/
 async function fetchYesterdays() {
   try {
     const data = await (await fetch(YESTERDAY_URL + "?cacheBust=" + Date.now())).json();
     const yesterdays = {};
     SHEDS.forEach(s => {
       const row = data.find(r => r[0] === s.Shed);
-      let val = 0;
-      if (row && row[1] && row[1] !== "No Data") {
-        val = parseFloat(row[1]);
-        if (isNaN(val)) val = 0;
-        if (val > 0 && val < 1) val = val * 100; // Convert fraction to %
+      let display = "0";
+
+      if (!row || row[1] === "No Data" || row[1] == null || row[1] === "") {
+        display = "0";
+      } else {
+        const raw = row[1];
+        let val = 0;
+        let rawIsString = false;
+        let rawHasPercent = false;
+
+        if (typeof raw === 'string') {
+          rawIsString = true;
+          rawHasPercent = raw.indexOf('%') !== -1;
+          const cleaned = raw.replace(/,/g, '').replace('%', '').trim();
+          val = parseFloat(cleaned);
+          if (isNaN(val)) val = 0;
+        } else if (typeof raw === 'number') {
+          val = raw;
+        } else {
+          val = 0;
+        }
+
+        if (val === 0) {
+          display = "0";
+        } else if (rawIsString && rawHasPercent) {
+          // "105%" -> 105
+          display = Math.round(val).toString();
+        } else {
+          // numeric or string without % sign
+          if (val > 0 && val < 1) {
+            // 0.87 -> 87
+            val = val * 100;
+          } else if (val >= 1 && val < 100) {
+            // Ambiguous range:
+            // Treat 1.05 or small decimals like 1.05 as decimal-percents (->105)
+            // If value is exactly 1 treat as 100
+            if (val === 1 || (val < 10 && (val % 1 !== 0))) {
+              val = val * 100;
+            }
+            // otherwise keep as-is (e.g., 50 -> 50)
+          }
+          display = Math.round(val).toString();
+        }
+
+        // Uncomment to debug mappings:
+        // console.log(`YESTERDAY raw=${JSON.stringify(raw)} -> display=${display}`);
       }
-      yesterdays[s.Shed] = val.toFixed(0);
+
+      yesterdays[s.Shed] = display;
     });
     return yesterdays;
   } catch (e) {
@@ -200,6 +248,7 @@ function downloadPDF() {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const dateStr = new Date().toISOString().slice(0,10);
+
   const img = new Image();
   img.crossOrigin = "Anonymous";
   img.src = "https://raw.githubusercontent.com/adamcwhall-coder/feeding-plan/main/0EC2FEE7-BD1C-4332-AAB4-AAD5FF7BD04A.png";
@@ -208,6 +257,7 @@ function downloadPDF() {
     const pdfWidth = 140;
     const pdfHeight = (img.height / img.width) * pdfWidth;
     doc.addImage(img, "JPEG", 35, 20, pdfWidth, pdfHeight);
+
     let y = 20 + pdfHeight + 15;
     doc.setFontSize(22);
     doc.text("New Blainslie Feeding Plan", 105, y, { align: "center" });
@@ -226,6 +276,25 @@ function downloadPDF() {
         head: [["Shed","%","Headcount","Total (kg)"]],
         body: batch.sheds.map(s=>[s.shed.Shed,s.percentStr,Math.round(s.shed.Headcount),Math.round(s.total)]),
         theme: "striped",
+        headStyles: { fillColor:[42,110,187], halign:"center" },
+        styles: { halign:"center" }
+      });
+
+      const ingredientTotals = {};
+      RATIONS.forEach(r=>{ if(!/total/i.test(r.Ingredient)) ingredientTotals[r.Ingredient]=0; });
+      batch.sheds.forEach(s=>{
+        RATIONS.forEach(r=>{
+          if(/total/i.test(r.Ingredient)) return;
+          const q=r[s.shed.Ration];
+          if(q!=null) ingredientTotals[r.Ingredient]+=q*s.percent*s.shed.Headcount;
+        });
+      });
+
+      doc.autoTable({
+        startY: doc.lastAutoTable.finalY + 10,
+        head: [["Ingredient","Quantity (kg)"]],
+        body: Object.entries(ingredientTotals).map(([ing,qty])=>[ing,Math.round(qty)]),
+        theme: "grid",
         headStyles: { fillColor:[42,110,187], halign:"center" },
         styles: { halign:"center" }
       });
