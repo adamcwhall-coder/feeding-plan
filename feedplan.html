@@ -19,8 +19,6 @@ h1 { text-align: center; color: #2a6ebb; font-size: 1.5em; }
 }
 @keyframes spin { 0% { transform: rotate(0deg);} 100% { transform: rotate(360deg);} }
 #totalHeadcount { font-size: 16px; margin-bottom: 15px; text-align: center; }
-#maxBatchContainer { text-align: center; margin-bottom: 15px; }
-#maxBatchInput { width: 120px; padding: 5px; text-align: center; border-radius: 4px; border: 1px solid #ccc; }
 table { border-collapse: collapse; width: 100%; margin-bottom: 20px; display: block; overflow-x: auto; }
 th, td { border: 1px solid #444; padding: 8px; text-align: center; min-width: 100px; }
 th { background: #2a6ebb; color: white; }
@@ -39,7 +37,7 @@ button:hover { opacity: 0.85; }
   body { background: white !important; }
   table th { background-color: #2a6ebb !important; color: white !important; }
   tr:nth-child(even) { background-color: #f9f9f9 !important; }
-  #inputs, #loading, #generateBtn, #printBtn, #pdfBtn, #maxBatchContainer { display: none !important; }
+  #inputs, #loading, #generateBtn, #printBtn, #pdfBtn { display: none !important; }
 }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -49,14 +47,7 @@ button:hover { opacity: 0.85; }
 
 <h1>New Blainslie Feeding Plan</h1>
 <div id="loading"><div class="spinner"></div> Loading sheds...</div>
-
 <div id="totalHeadcount">Total Headcount: 0</div>
-
-<div id="maxBatchContainer">
-  <label for="maxBatchInput"><strong>Max Batch Size (kg):</strong></label>
-  <input type="number" id="maxBatchInput" value="2500" min="500" step="100">
-</div>
-
 <div id="inputs"></div>
 <button id="generateBtn" onclick="generatePlan()">Generate Plan</button>
 
@@ -66,10 +57,12 @@ button:hover { opacity: 0.85; }
 </div>
 
 <script>
-let RATIONS = [], SHEDS = [], PLAN = [], TOTAL_HEADCOUNT = 0;
+const MAX_BATCH = 2400;
 const RATIONS_URL = "https://script.google.com/macros/s/AKfycbz7xmhtWaSwMcKVqZuuSo1eIAGOTKjThMYuDxyzKi3CNZ-uK8qAd_4ojJkVk8o0iwk/exec";
 const YESTERDAY_URL = "https://script.google.com/macros/s/AKfycbydhGdSJ52UomMLIP1GtxyVQe2dflny8PUIC5lfv0vIiqDis_AorTZr_MsbYWaPfCCI/exec";
 const SHEDS_URL = "https://script.google.com/macros/s/AKfycbwgA3g-Ps70NR3oBcgv11PU9wPwWg2Q5J_QHVF-aZ_Ix6G6rvOkGoYtYh1gZsL0Ed1K/exec";
+
+let RATIONS = [], SHEDS = [], PLAN = [], TOTAL_HEADCOUNT = 0;
 
 function showLoading(show) { document.getElementById("loading").style.display = show ? "block" : "none"; }
 
@@ -84,10 +77,15 @@ async function fetchSheds() {
 }
 
 /*
- Robust detection for yesterday's percentage values:
- - Handles "105%", "105", 1.05, 0.87, and numeric types returned by Sheets.
- - Keeps whole percentages (>=100) as-is, converts fractions (0.87 -> 87),
-   and treats 1.05 as 105 (decimal percent).
+ Improved detection for yesterday's percentage values:
+ - Accepts numbers, strings like "105%", "1.05", "0.87", "105"
+ - Heuristics:
+   * If value is a string containing "%", strip and use as percent.
+   * If numeric and 0 < val < 1  => treat as fraction (0.87 -> 87).
+   * If numeric and val === 1      => treat as 100.
+   * If numeric and 1 < val < 100 and val has fractional part (e.g. 1.05) => treat as decimal percent (1.05 -> 105).
+   * If numeric and val >= 100     => keep as-is (already percent integer).
+   * Otherwise keep as-is (e.g., 50 stays 50).
 */
 async function fetchYesterdays() {
   try {
@@ -117,6 +115,7 @@ async function fetchYesterdays() {
           val = 0;
         }
 
+        // Decide how to interpret val
         if (val === 0) {
           display = "0";
         } else if (rawIsString && rawHasPercent) {
@@ -128,19 +127,19 @@ async function fetchYesterdays() {
             // 0.87 -> 87
             val = val * 100;
           } else if (val >= 1 && val < 100) {
-            // Ambiguous range:
-            // Treat 1.05 or small decimals like 1.05 as decimal-percents (->105)
-            // If value is exactly 1 treat as 100
+            // This range is ambiguous:
+            // - If it's exactly 1 -> treat as 100
+            // - If it has a fractional part (e.g. 1.05) -> treat as decimal percent -> 105
+            // - Otherwise assume it's already a percentage (e.g. 50 -> 50)
             if (val === 1 || (val < 10 && (val % 1 !== 0))) {
               val = val * 100;
             }
-            // otherwise keep as-is (e.g., 50 -> 50)
           }
           display = Math.round(val).toString();
         }
 
-        // Uncomment to debug mappings:
-        // console.log(`YESTERDAY raw=${JSON.stringify(raw)} -> display=${display}`);
+        // helpful debug in console if you want to inspect raw -> display mapping
+        // console.log(`YESTERDAY: shed=${s.Shed} raw=${JSON.stringify(raw)} -> display=${display}`);
       }
 
       yesterdays[s.Shed] = display;
@@ -180,8 +179,6 @@ async function initInputs() {
 }
 
 function generatePlan() {
-  const maxBatch = parseFloat(document.getElementById("maxBatchInput").value) || 2500;
-
   const percentages = SHEDS.map((s,i)=>{
     const el = document.getElementById("shed"+i);
     let val = (el && el.value) ? el.value.trim() : "";
@@ -202,7 +199,7 @@ function generatePlan() {
     sheds.sort((a,b)=>b.total-a.total);
     let batches=[], current={sheds:[], total:0};
     sheds.forEach(s=>{
-      if(s.total + current.total <= maxBatch || current.sheds.length===0){
+      if(s.total + current.total <= MAX_BATCH || current.sheds.length===0){
         current.sheds.push(s); current.total += s.total;
       } else { batches.push(current); current={sheds:[s], total:s.total}; }
     });
@@ -267,10 +264,11 @@ function downloadPDF() {
     y += 15;
     doc.text(`Total Headcount: ${TOTAL_HEADCOUNT}`, 105, y, { align: "center" });
 
-    PLAN.forEach((batch)=>{
+    PLAN.forEach((batch, idx)=>{
       doc.addPage();
       doc.setFontSize(14);
       doc.text(`Mix ${batch.idx} - ${batch.rationType} - Total: ${Math.round(batch.total)} kg`, 14, 20);
+
       doc.autoTable({
         startY: 30,
         head: [["Shed","%","Headcount","Total (kg)"]],
