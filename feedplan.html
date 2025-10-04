@@ -82,21 +82,23 @@ async function fetchYesterdays() {
     const yesterdays = {};
     SHEDS.forEach(s => {
       const row = data.find(r => r[0] === s.Shed);
-      if (!row || row[1] === "No Data" || row[1]==null || row[1]==="") {
+      if (!row || row[1] === "No Data" || row[1] == null || row[1] === "") {
         yesterdays[s.Shed] = "0";
-      } else if (typeof row[1] === "number") {
-        if (row[1] > 0 && row[1] < 1) {
-          yesterdays[s.Shed] = (row[1] * 100).toFixed(0);
-        } else {
-          yesterdays[s.Shed] = row[1].toFixed(0);
-        }
       } else {
-        const num = parseFloat(row[1]);
-        yesterdays[s.Shed] = isNaN(num) ? 0 : num.toFixed(0);
+        let val = parseFloat(row[1]);
+        if (isNaN(val)) val = 0;
+
+        // ✅ Allow numbers above 100 and scale only fractions
+        if (val > 0 && val < 1) val = val * 100;
+
+        yesterdays[s.Shed] = val.toFixed(0);
       }
     });
     return yesterdays;
-  } catch (e) { console.error("Error fetching yesterday's data:", e); return {}; }
+  } catch (e) {
+    console.error("Error fetching yesterday's data:", e);
+    return {};
+  }
 }
 
 function computeShedTotal(shed, percent) {
