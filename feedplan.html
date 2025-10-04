@@ -76,7 +76,10 @@ async function fetchSheds() {
   catch (e) { console.error("Error fetching sheds:", e); SHEDS = []; }
 }
 
-// Restored original percentage logic
+/*
+ Restored original robust percentage detection:
+ - Handles "105%", "1.05", 0.87, 105, "105", etc.
+*/
 async function fetchYesterdays() {
   try {
     const data = await (await fetch(YESTERDAY_URL + "?cacheBust=" + Date.now())).json();
@@ -84,15 +87,50 @@ async function fetchYesterdays() {
     SHEDS.forEach(s => {
       const row = data.find(r => r[0] === s.Shed);
       let display = "0";
+
       if (!row || row[1] === "No Data" || row[1] == null || row[1] === "") {
         display = "0";
       } else {
         const raw = row[1];
-        let val = parseFloat((raw + "").replace("%","").trim());
-        if (isNaN(val)) val = 0;
-        if (val > 0 && val < 1) val *= 100;
-        display = Math.round(val).toString();
+        let val = 0;
+        let rawIsString = false;
+        let rawHasPercent = false;
+
+        if (typeof raw === 'string') {
+          rawIsString = true;
+          rawHasPercent = raw.indexOf('%') !== -1;
+          const cleaned = raw.replace(/,/g, '').replace('%', '').trim();
+          val = parseFloat(cleaned);
+          if (isNaN(val)) val = 0;
+        } else if (typeof raw === 'number') {
+          val = raw;
+        } else {
+          val = 0;
+        }
+
+        if (val === 0) {
+          display = "0";
+        } else if (rawIsString && rawHasPercent) {
+          // "105%" -> 105
+          display = Math.round(val).toString();
+        } else {
+          // numeric or string without % sign
+          if (val > 0 && val < 1) {
+            // 0.87 -> 87
+            val = val * 100;
+          } else if (val >= 1 && val < 100) {
+            // This range is ambiguous:
+            // - If it's exactly 1 -> treat as 100
+            // - If it has a fractional part (e.g. 1.05) -> treat as decimal percent (1.05 -> 105)
+            // - Otherwise assume it's already a percentage (e.g. 50 -> 50)
+            if (val === 1 || (val < 10 && (val % 1 !== 0))) {
+              val = val * 100;
+            }
+          }
+          display = Math.round(val).toString();
+        }
       }
+
       yesterdays[s.Shed] = display;
     });
     return yesterdays;
@@ -248,7 +286,7 @@ function downloadPDF() {
         styles: { halign:"center" }
       });
 
-      // Per-mix ingredient totals and running totals within the mix
+      // Per-mix ingredient totals and running totals within that mix only
       const ingredientTotals = {};
       RATIONS.forEach(r=>{ if(!/total/i.test(r.Ingredient)) ingredientTotals[r.Ingredient]=0; });
       batch.sheds.forEach(s=>{
