@@ -76,23 +76,73 @@ async function fetchSheds() {
   catch (e) { console.error("Error fetching sheds:", e); SHEDS = []; }
 }
 
+/*
+ Improved detection for yesterday's percentage values:
+ - Accepts numbers, strings like "105%", "1.05", "0.87", "105"
+ - Heuristics:
+   * If value is a string containing "%", strip and use as percent.
+   * If numeric and 0 < val < 1  => treat as fraction (0.87 -> 87).
+   * If numeric and val === 1      => treat as 100.
+   * If numeric and 1 < val < 100 and val has fractional part (e.g. 1.05) => treat as decimal percent (1.05 -> 105).
+   * If numeric and val >= 100     => keep as-is (already percent integer).
+   * Otherwise keep as-is (e.g., 50 stays 50).
+*/
 async function fetchYesterdays() {
   try {
     const data = await (await fetch(YESTERDAY_URL + "?cacheBust=" + Date.now())).json();
     const yesterdays = {};
     SHEDS.forEach(s => {
       const row = data.find(r => r[0] === s.Shed);
+      let display = "0";
+
       if (!row || row[1] === "No Data" || row[1] == null || row[1] === "") {
-        yesterdays[s.Shed] = "0";
+        display = "0";
       } else {
-        let val = parseFloat(row[1]);
-        if (isNaN(val)) val = 0;
+        const raw = row[1];
+        let val = 0;
+        let rawIsString = false;
+        let rawHasPercent = false;
 
-        // ✅ Allow numbers above 100 and scale only fractions
-        if (val > 0 && val < 1) val = val * 100;
+        if (typeof raw === 'string') {
+          rawIsString = true;
+          rawHasPercent = raw.indexOf('%') !== -1;
+          const cleaned = raw.replace(/,/g, '').replace('%', '').trim();
+          val = parseFloat(cleaned);
+          if (isNaN(val)) val = 0;
+        } else if (typeof raw === 'number') {
+          val = raw;
+        } else {
+          val = 0;
+        }
 
-        yesterdays[s.Shed] = val.toFixed(0);
+        // Decide how to interpret val
+        if (val === 0) {
+          display = "0";
+        } else if (rawIsString && rawHasPercent) {
+          // "105%" -> 105
+          display = Math.round(val).toString();
+        } else {
+          // numeric or string without % sign
+          if (val > 0 && val < 1) {
+            // 0.87 -> 87
+            val = val * 100;
+          } else if (val >= 1 && val < 100) {
+            // This range is ambiguous:
+            // - If it's exactly 1 -> treat as 100
+            // - If it has a fractional part (e.g. 1.05) -> treat as decimal percent -> 105
+            // - Otherwise assume it's already a percentage (e.g. 50 -> 50)
+            if (val === 1 || (val < 10 && (val % 1 !== 0))) {
+              val = val * 100;
+            }
+          }
+          display = Math.round(val).toString();
+        }
+
+        // helpful debug in console if you want to inspect raw -> display mapping
+        // console.log(`YESTERDAY: shed=${s.Shed} raw=${JSON.stringify(raw)} -> display=${display}`);
       }
+
+      yesterdays[s.Shed] = display;
     });
     return yesterdays;
   } catch (e) {
@@ -130,8 +180,9 @@ async function initInputs() {
 
 function generatePlan() {
   const percentages = SHEDS.map((s,i)=>{
-    let val = document.getElementById("shed"+i).value.trim();
-    if (!val) val = document.getElementById("shed"+i).placeholder;
+    const el = document.getElementById("shed"+i);
+    let val = (el && el.value) ? el.value.trim() : "";
+    if (!val) val = el ? el.placeholder : "0";
     return parseFloat(val)/100 || 0;
   });
 
