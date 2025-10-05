@@ -186,21 +186,43 @@ function generatePlan(){
 function enableDragDrop(){
   document.querySelectorAll(".ingredient-table, .shed-table").forEach(table=>{
     const tbody=table.querySelector("tbody");
-    const rows=tbody.querySelectorAll("tr");
-    rows.forEach(row=>{
+    const qtyIndex = table.classList.contains("ingredient-table") ? 2 : 4;
+    const cumulativeIndex = table.classList.contains("ingredient-table") ? 3 : 5;
+
+    tbody.querySelectorAll("tr").forEach(row=>{
       const handle=row.querySelector(".drag-handle");
       let dragRow=null;
-      handle.addEventListener("dragstart",()=>{dragRow=row;row.style.opacity="0.5";});
-      handle.addEventListener("dragend",()=>{row.style.opacity="1";dragRow=null;});
-      handle.addEventListener("dragover",e=>{e.preventDefault();});
-      handle.addEventListener("drop",()=>{if(!dragRow||dragRow===row)return;tbody.insertBefore(dragRow,row.nextSibling);});
+
+      handle.addEventListener("dragstart",()=>{ dragRow=row; row.style.opacity="0.5"; });
+      handle.addEventListener("dragend",()=>{ row.style.opacity="1"; dragRow=null; });
+      handle.addEventListener("dragover",e=>{ e.preventDefault(); });
+
+      handle.addEventListener("drop",()=>{
+        if(!dragRow || dragRow===row) return;
+        tbody.insertBefore(dragRow,row.nextSibling);
+
+        if(table.classList.contains("ingredient-table")){
+          let cum=0;
+          tbody.querySelectorAll("tr").forEach(r=>{
+            const val=parseFloat(r.children[qtyIndex].textContent)||0;
+            cum+=val;
+            r.children[cumulativeIndex].textContent=Math.round(cum);
+          });
+        } else if(table.classList.contains("shed-table")){
+          let remaining = 0;
+          tbody.querySelectorAll("tr").forEach(r=>{ remaining += parseFloat(r.children[qtyIndex].textContent)||0; });
+          tbody.querySelectorAll("tr").forEach(r=>{
+            remaining -= parseFloat(r.children[qtyIndex].textContent)||0;
+            r.children[cumulativeIndex].textContent=Math.max(Math.round(remaining),0);
+          });
+        }
+      });
     });
   });
 }
 
 function printPlan(){window.print();}
 
-// ✅ FIXED downloadPDF - no duplicate headers
 function downloadPDF(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
