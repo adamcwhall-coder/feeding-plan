@@ -55,71 +55,70 @@ button:hover { opacity: 0.85; }
 </div>
 
 <script>
-// CONFIG
-let MAX_BATCH = 2600;
 const RATIONS_URL = "https://script.google.com/macros/s/AKfycbz7xmhtWaSwMcKVqZuuSo1eIAGOTKjThMYuDxyzKi3CNZ-uK8qAd_4ojJkVk8o0iwk/exec";
 const YESTERDAY_URL = "https://script.google.com/macros/s/AKfycbydhGdSJ52UomMLIP1GtxyVQe2dflny8PUIC5lfv0vIiqDis_AorTZr_MsbYWaPfCCI/exec";
 const SHEDS_URL = "https://script.google.com/macros/s/AKfycbwgA3g-Ps70NR3oBcgv11PU9wPwWg2Q5J_QHVF-aZ_Ix6G6rvOkGoYtYh1gZsL0Ed1K/exec";
 
 let RATIONS = [], SHEDS = [], PLAN = [], TOTAL_HEADCOUNT = 0;
 
-// FETCH
-function showLoading(show){document.getElementById("loading").style.display=show?"block":"none";}
-async function fetchRations(){try{RATIONS=await(await fetch(RATIONS_URL+"?cacheBust="+Date.now())).json();}catch(e){RATIONS=[];}}
-async function fetchSheds(){try{SHEDS=await(await fetch(SHEDS_URL+"?cacheBust="+Date.now())).json();}catch(e){SHEDS=[];}}
+function showLoading(show){ document.getElementById("loading").style.display = show ? "block" : "none"; }
 
-// ORIGINAL PERCENTAGE LOGIC
+async function fetchRations(){ RATIONS = await (await fetch(RATIONS_URL + "?cacheBust=" + Date.now())).json(); }
+async function fetchSheds(){ SHEDS = await (await fetch(SHEDS_URL + "?cacheBust=" + Date.now())).json(); }
+
 async function fetchYesterdays(){
-  try{
-    const data = await (await fetch(YESTERDAY_URL+"?cacheBust="+Date.now())).json();
-    const yesterdays = {};
-    SHEDS.forEach(s=>{
-      const row = data.find(r => r[0]===s.Shed);
-      let display = "0";
-      if(!row || !row[1] || row[1]==="No Data"){ display="0"; }
-      else{
-        const raw = row[1];
-        let val = 0, rawIsString=false, rawHasPercent=false;
-        if(typeof raw==="string"){ rawIsString=true; rawHasPercent=raw.indexOf('%')!==-1; val=parseFloat(raw.replace(/,/g,'').replace('%','').trim()); if(isNaN(val)) val=0;}
-        else if(typeof raw==="number"){ val=raw; } else val=0;
-        if(val===0){ display="0"; }
-        else if(rawIsString && rawHasPercent){ display=Math.round(val).toString(); }
-        else{
-          if(val>0 && val<1) val*=100;
-          else if(val>=1 && val<100){ if(val===1 || (val<10 && val%1!==0)) val*=100; }
-          display=Math.round(val).toString();
-        }
+  const data = await (await fetch(YESTERDAY_URL + "?cacheBust=" + Date.now())).json();
+  const yesterdays = {};
+  SHEDS.forEach(s => {
+    const row = data.find(r => r[0] === s.Shed);
+    let display = "0";
+    if(row && row[1] && row[1] !== "No Data"){
+      const raw = row[1];
+      let val = parseFloat(raw.toString().replace("%","").trim());
+      if(!isNaN(val)){
+        if(val > 0 && val < 1) val *= 100;
+        else if(val >= 1 && val < 10 && val % 1 !== 0) val *= 100;
+        display = Math.round(val).toString();
       }
-      yesterdays[s.Shed]=display;
-    });
-    return yesterdays;
-  }catch(e){ return {}; }
+    }
+    yesterdays[s.Shed] = display;
+  });
+  return yesterdays;
 }
 
-// INPUTS
-function computeShedTotal(shed,percent){
+function computeShedTotal(shed, percent){
   let total=0;
-  for(let r of RATIONS){ if(/total/i.test(r.Ingredient)) continue; const qty=r[shed.Ration]; if(qty!=null) total+=qty*percent*shed.Headcount; }
+  RATIONS.forEach(r=>{
+    if(!/total/i.test(r.Ingredient)){
+      const qty=r[shed.Ration];
+      if(qty!=null) total+=qty*percent*shed.Headcount;
+    }
+  });
   return total;
 }
 
 async function initInputs(){
-  showLoading(true); await fetchRations(); await fetchSheds(); const yesterdays=await fetchYesterdays();
-  TOTAL_HEADCOUNT = SHEDS.reduce((sum,s)=>sum+(s.Headcount||0),0);
+  showLoading(true);
+  await fetchRations();
+  await fetchSheds();
+  const yesterdays=await fetchYesterdays();
+  TOTAL_HEADCOUNT=SHEDS.reduce((sum,s)=>sum+(s.Headcount||0),0);
   document.getElementById("totalHeadcount").textContent=`Total Headcount: ${TOTAL_HEADCOUNT}`;
-  const c=document.getElementById("inputs");
-  c.innerHTML=`<table><thead><tr><th>Shed</th><th>% of Target</th></tr></thead><tbody>`+
-    SHEDS.map((s,i)=>`<tr><td>${s.Shed}</td><td><input type="number" id="shed${i}" placeholder="${yesterdays[s.Shed]||0}"></td></tr>`).join('')+
-    `</tbody></table>`;
+  const container=document.getElementById("inputs");
+  container.innerHTML="<table><thead><tr><th>Shed</th><th>% of Target</th></tr></thead><tbody>"+
+    SHEDS.map((s,i)=>{
+      const placeholder=yesterdays[s.Shed]||0;
+      return `<tr><td>${s.Shed}</td><td><input type="number" id="shed${i}" placeholder="${placeholder}"></td></tr>`;
+    }).join("")+"</tbody></table>";
   showLoading(false);
 }
 
-// PLAN
 function generatePlan(){
-  MAX_BATCH=parseFloat(document.getElementById("maxBatch").value)||2600;
-  const percentages = SHEDS.map((s,i)=>{
+  const MAX_BATCH=parseFloat(document.getElementById("maxBatch").value)||2600;
+  const percentages=SHEDS.map((s,i)=>{
     const el=document.getElementById("shed"+i);
-    let val=el.value.trim()||el.placeholder||"0";
+    let val=(el&&el.value)?el.value.trim():"";
+    if(!val) val=el?el.placeholder:"0";
     return parseFloat(val)/100||0;
   });
 
@@ -136,75 +135,72 @@ function generatePlan(){
     sheds.sort((a,b)=>b.total-a.total);
     let batches=[],current={sheds:[],total:0};
     sheds.forEach(s=>{
-      if(s.total+current.total<=MAX_BATCH||current.sheds.length===0){current.sheds.push(s);current.total+=s.total;}
-      else{batches.push(current);current={sheds:[s],total:s.total};}
+      if(s.total+current.total<=MAX_BATCH||current.sheds.length===0){
+        current.sheds.push(s);current.total+=s.total;
+      }else{batches.push(current);current={sheds:[s],total:s.total};}
     });
-    if(current.sheds.length>0) batches.push(current);
-    batches.forEach((b,i)=>PLAN.push({rationType,idx:i+1,sheds:b.sheds,total:b.total}));
+    if(current.sheds.length>0)batches.push(current);
+    batches.forEach((batch,idx)=>PLAN.push({rationType,idx:idx+1,sheds:batch.sheds,total:batch.total}));
   });
 
-  const out=document.getElementById("planOutput");
-  out.style.display="block";
-  out.innerHTML=`<button id="printBtn" onclick="printPlan()">Print</button>
-                 <button id="pdfBtn" onclick="downloadPDF()">Download PDF</button>
-                 <h2>Date: ${new Date().toISOString().slice(0,10)}</h2>`;
+  const output=document.getElementById("planOutput");
+  output.style.display="block";
+  output.innerHTML=`<button id="printBtn" onclick="printPlan()">Print</button>
+                    <button id="pdfBtn" onclick="downloadPDF()">Download PDF</button>
+                    <h2>Date: ${new Date().toISOString().slice(0,10)}</h2>`;
 
   PLAN.forEach(batch=>{
     let html=`<h3>Mix ${batch.idx} - ${batch.rationType} - Total: ${Math.round(batch.total)} kg</h3>`;
-    html+=`<table class="shed-table"><tr><th></th><th>Shed</th><th>%</th><th>Headcount</th><th>Total (kg)</th><th>Remaining (kg)</th></tr>`;
+    html+=`<table class="shed-table"><thead><tr><th></th><th>Shed</th><th>%</th><th>Headcount</th><th>Total (kg)</th><th>Remaining (kg)</th></tr></thead><tbody>`;
     let remaining=batch.total;
-    batch.sheds.forEach(s=>{ remaining-=s.total; html+=`<tr draggable="true"><td class="drag-handle">⋮⋮</td><td>${s.shed.Shed}</td><td>${s.percentStr}</td><td>${Math.round(s.shed.Headcount)}</td><td>${Math.round(s.total)}</td><td>${Math.max(Math.round(remaining),0)}</td></tr>`; });
-    html+=`</table>`;
+    batch.sheds.forEach((s,idx)=>{
+      remaining-=s.total;
+      html+=`<tr draggable="true"><td class="drag-handle">☰</td><td>${s.shed.Shed}</td><td>${s.percentStr}</td><td>${Math.round(s.shed.Headcount)}</td><td>${Math.round(s.total)}</td><td>${Math.max(Math.round(remaining),0)}</td></tr>`;
+    });
+    html+="</tbody></table>";
 
     const ingredientTotals={};
-    RATIONS.forEach(r=>{if(!/total/i.test(r.Ingredient)) ingredientTotals[r.Ingredient]=0;});
-    batch.sheds.forEach(s=>{ RATIONS.forEach(r=>{if(/total/i.test(r.Ingredient)) return; const q=r[s.shed.Ration]; if(q!=null) ingredientTotals[r.Ingredient]+=q*s.percent*s.shed.Headcount; }); });
-
+    RATIONS.forEach(r=>{if(!/total/i.test(r.Ingredient))ingredientTotals[r.Ingredient]=0;});
+    batch.sheds.forEach(s=>{
+      RATIONS.forEach(r=>{
+        if(!/total/i.test(r.Ingredient)){
+          const q=r[s.shed.Ration];
+          if(q!=null)ingredientTotals[r.Ingredient]+=q*s.percent*s.shed.Headcount;
+        }
+      });
+    });
+    let cum=0;
     html+=`<table class="ingredient-table"><thead><tr><th></th><th>Ingredient</th><th>Qty (kg)</th><th>Cumulative Total (kg)</th></tr></thead><tbody>`;
-    let cumulative=0;
-    Object.entries(ingredientTotals).forEach(([ing,qty])=>{ cumulative+=qty; html+=`<tr draggable="true"><td class="drag-handle">⋮⋮</td><td>${ing}</td><td>${Math.round(qty)}</td><td>${Math.round(cumulative)}</td></tr>`; });
-    html+=`</tbody></table>`;
-
-    out.innerHTML+=html;
+    Object.entries(ingredientTotals).forEach(([ing,qty])=>{
+      cum+=qty;
+      html+=`<tr draggable="true"><td class="drag-handle">☰</td><td>${ing}</td><td>${Math.round(qty)}</td><td>${Math.round(cum)}</td></tr>`;
+    });
+    html+="</tbody></table>";
+    output.innerHTML+=html;
   });
 
-  document.querySelectorAll(".ingredient-table").forEach(makeIngredientTableDraggable);
-  document.querySelectorAll(".shed-table").forEach(makeShedTableDraggable);
+  enableDragDrop();
   document.getElementById("planOutput").scrollIntoView({behavior:"smooth"});
 }
 
-// DRAG & DROP
-function makeIngredientTableDraggable(table){ makeDraggable(table,2,3); }
-function makeShedTableDraggable(table){ makeDraggable(table,4,5); }
-
-function makeDraggable(table, qtyIndex, cumulativeIndex){
-  const tbody=table.querySelector("tbody")||table;
-  let dragRow=null;
-  tbody.querySelectorAll("tr").forEach(row=>{
-    const handle=row.querySelector(".drag-handle"); if(!handle) return;
-
-    handle.addEventListener("dragstart",()=>{dragRow=row; row.style.opacity="0.5";});
-    handle.addEventListener("dragend",()=>{row.style.opacity=""; dragRow=null;});
-
-    handle.addEventListener("dragover",e=>{e.preventDefault();});
-    handle.addEventListener("drop",()=>{if(!dragRow||dragRow===row) return;
-      tbody.insertBefore(dragRow,row.nextSibling);
-      if(table.classList.contains("ingredient-table")){
-        let cum=0;
-        tbody.querySelectorAll("tr").forEach(r=>{ const val=parseFloat(r.children[qtyIndex].textContent)||0; cum+=val; r.children[cumulativeIndex].textContent=Math.round(cum); });
-      } else if(table.classList.contains("shed-table")){
-        let remaining=0;
-        tbody.querySelectorAll("tr").forEach(r=>{remaining+=parseFloat(r.children[qtyIndex].textContent)||0;});
-        tbody.querySelectorAll("tr").forEach(r=>{remaining-=parseFloat(r.children[qtyIndex].textContent)||0; r.children[cumulativeIndex].textContent=Math.max(Math.round(remaining),0);});
-      }
+function enableDragDrop(){
+  document.querySelectorAll(".ingredient-table, .shed-table").forEach(table=>{
+    const tbody=table.querySelector("tbody");
+    const rows=tbody.querySelectorAll("tr");
+    rows.forEach(row=>{
+      const handle=row.querySelector(".drag-handle");
+      let dragRow=null;
+      handle.addEventListener("dragstart",()=>{dragRow=row;row.style.opacity="0.5";});
+      handle.addEventListener("dragend",()=>{row.style.opacity="1";dragRow=null;});
+      handle.addEventListener("dragover",e=>{e.preventDefault();});
+      handle.addEventListener("drop",()=>{if(!dragRow||dragRow===row)return;tbody.insertBefore(dragRow,row.nextSibling);});
     });
   });
 }
 
-// PRINT
 function printPlan(){window.print();}
 
-// DOWNLOAD PDF (FIXED)
+// ✅ FIXED downloadPDF - no duplicate headers
 function downloadPDF(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
@@ -221,39 +217,37 @@ function downloadPDF(){
 
   shedTables.forEach((sTable, i) => {
     const iTable = ingredientTables[i];
-    const shedRows = [...sTable.querySelectorAll("tbody tr")];
-    const ingRows = [...iTable.querySelectorAll("tbody tr")];
-
+    const shedRows = Array.from(sTable.querySelectorAll("tbody tr"));
+    const ingRows = Array.from(iTable.querySelectorAll("tbody tr"));
     if(i>0) doc.addPage();
 
-    let totalBatch=0;
-    shedRows.forEach(r=>{ totalBatch+=parseFloat(r.children[4].textContent)||0; });
+    let totalBatch = 0;
+    shedRows.forEach(r => { totalBatch += parseFloat(r.children[4].textContent) || 0; });
     doc.setFontSize(14);
     doc.text(`Mix ${i+1} - Total: ${Math.round(totalBatch)} kg`, 14, 20);
 
     doc.autoTable({
-      startY:30,
-      head:[["Shed","%","Headcount","Total (kg)","Remaining (kg)"]],
-      body:shedRows.map(r=>[...r.children].slice(1,6).map(c=>c.textContent)),
-      theme:"striped",
-      headStyles:{fillColor:[42,110,187],halign:"center"},
-      styles:{halign:"center"}
+      startY: 30,
+      head: [["Shed","%","Headcount","Total (kg)","Remaining (kg)"]],
+      body: shedRows.map(r => Array.from(r.children).slice(1,6).map(c => c.textContent)),
+      theme: "striped",
+      headStyles: { fillColor: [42,110,187], halign: "center" },
+      styles: { halign: "center" }
     });
 
     doc.autoTable({
-      startY:doc.lastAutoTable.finalY+10,
-      head:[["Ingredient","Qty (kg)","Cumulative Total (kg)"]],
-      body:ingRows.map(r=>[...r.children].slice(1,4).map(c=>c.textContent)),
-      theme:"grid",
-      headStyles:{fillColor:[42,110,187],halign:"center"},
-      styles:{halign:"center"}
+      startY: doc.lastAutoTable.finalY + 10,
+      head: [["Ingredient","Qty (kg)","Cumulative Total (kg)"]],
+      body: ingRows.map(r => Array.from(r.children).slice(1,4).map(c => c.textContent)),
+      theme: "grid",
+      headStyles: { fillColor: [42,110,187], halign: "center" },
+      styles: { halign: "center" }
     });
   });
 
   doc.save(`feeding_plan_${dateStr}.pdf`);
 }
 
-// INIT
 initInputs();
 </script>
 </body>
